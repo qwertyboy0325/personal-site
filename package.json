@@ -1,0 +1,15 @@
+{
+  "name": "personal-site",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Console-style, single-page interactive personal site. No framework, no build step for the app itself.",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "dev": "node scripts/serve.mjs",
+    "build": "node scripts/prerender.mjs",
+    "test": "node --test test/",
+    "e2e": "node scripts/e2e.mjs",
+    "check":"node scripts/prerender.mjs --check && node --test test/"
+  }
+}
