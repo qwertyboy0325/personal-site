@@ -11,7 +11,7 @@ import { renderFace } from './fx/face.js';
 
 export const PUBLIC_COMMANDS = ['about', 'projects', 'works', 'skills', 'contact', 'ls', 'cat', 'open', 'theme', 'lang', 'ascii', '3d', 'fx', 'transition', 'cursor', 'hud', 'clear', 'history', 'help'];
 const HIDDEN_COMMANDS = ['project', 'work', 'whoami', 'date', 'echo', 'neofetch', 'sudo', 'exit'];
-const ALIASES = { face: 'ascii', repos: 'projects', '?': 'help', man: 'help', cls: 'clear', dir: 'ls', ll: 'ls' };
+const ALIASES = { face: 'ascii', gui: 'hud', repos: 'projects', '?': 'help', man: 'help', cls: 'clear', dir: 'ls', ll: 'ls' };
 /** Commands whose output is addressable through the URL hash. */
 export const HUD_MODES = ['on', 'off'];
 /** Typing a shape's name on its own (`cube`) is a shortcut for `3d cube`. */

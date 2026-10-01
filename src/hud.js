@@ -1,22 +1,21 @@
-// The GUI layer around the terminal (wide screens only): live telemetry on the
-// left, a clickable project map and recent commands on the right.
+// Live telemetry and recent commands, shown at the bottom of the GUI pane
+// (src/gui.js).
 //
 // Every number is real (clock, uptime, viewport, measured frame rate, pointer
-// position and speed). The left column is decorative (aria-hidden); the right
-// column contains real buttons, so it is labelled and keyboard reachable.
+// position and speed). `left` holds the telemetry panels (decorative, so the
+// GUI pane marks them aria-hidden); `right` holds the recent commands, which are
+// real buttons. Timers only run while the panels are actually on screen.
 
 import { esc } from './render.js';
-import { projects, ui } from './content.js';
+import { ui } from './content.js';
 import { describeTarget } from './fx/reticle.js';
 import { formatClock, formatUptime, formatSpeed, sessionId, pushSample, sparkPoints, recentCommands } from './hud-format.js';
 
-const MAP_NODES = ['n1', 'n2', 'n3', 'n4'];
 const TICK_MS = 200;
 const FPS_WINDOW_MS = 500;
 
 export function createHud({ left, right, getState, getPointer, reduceMotion = false }) {
   const started = performance.now();
-  const wide = matchMedia('(min-width: 1320px)');
   const sid = sessionId();
   let enabled = true;
   let timer = 0;
@@ -51,16 +50,6 @@ export function createHud({ left, right, getState, getPointer, reduceMotion = fa
     </section>`;
 
   right.innerHTML = `
-    <section class="panel"><h3>// PROJECT MAP</h3>
-      <div class="map">
-        <svg class="map-lines" viewBox="0 0 200 200" preserveAspectRatio="none" aria-hidden="true">
-          <line x1="100" y1="100" x2="48" y2="26"/><line x1="100" y1="100" x2="152" y2="26"/>
-          <line x1="100" y1="100" x2="48" y2="174"/><line x1="100" y1="100" x2="152" y2="174"/>
-        </svg>
-        <button type="button" class="node node-core" data-cmd="about" title="about">EZRA</button>
-        ${projects.map((p, i) => `<button type="button" class="node ${MAP_NODES[i] ?? ''}" data-cmd="project ${i + 1}" title="${esc(p.slug)}">${esc(p.short)}</button>`).join('')}
-      </div>
-    </section>
     <section class="panel"><h3>// RECENT</h3><ul class="recent" data-h="recent"></ul></section>`;
 
   const q = (name, root) => root.querySelector(`[data-h="${name}"]`);
@@ -77,7 +66,9 @@ export function createHud({ left, right, getState, getPointer, reduceMotion = fa
     el[key].textContent = value;
   };
 
-  const active = () => enabled && wide.matches && !document.hidden;
+  // Rendered = the pane is on screen (wide layout, or the Overview tab on a narrow one).
+  const rendered = () => left.getClientRects().length > 0;
+  const active = () => enabled && rendered() && !document.hidden;
 
   function tick() {
     const s = getState();
@@ -117,7 +108,7 @@ export function createHud({ left, right, getState, getPointer, reduceMotion = fa
   function refresh() {
     const s = getState();
     const t = ui[s.lang] ?? ui.en;
-    right.setAttribute('aria-label', t.hudMapLabel);
+    right.setAttribute('aria-label', t.hudRecent);
     const cmds = recentCommands(s.history, 6);
     el.recent.innerHTML = cmds.length
       ? cmds.map((c) => `<li><button type="button" class="recent-btn" data-cmd="${esc(c)}">${esc(c)}</button></li>`).join('')
@@ -138,16 +129,17 @@ export function createHud({ left, right, getState, getPointer, reduceMotion = fa
     if (!reduceMotion) fpsRaf = requestAnimationFrame(fpsFrame);
   }
 
-  wide.addEventListener('change', schedule);
+  let resizeRaf = 0;
+  addEventListener('resize', () => { cancelAnimationFrame(resizeRaf); resizeRaf = requestAnimationFrame(schedule); });
   document.addEventListener('visibilitychange', schedule);
 
   return {
     refresh,
+    reschedule: schedule, // call after the pane is shown or hidden by something other than `setEnabled`
     get enabled() { return enabled; },
     setEnabled(on) {
       enabled = !!on;
       document.documentElement.dataset.hud = enabled ? 'on' : 'off';
-      left.hidden = right.hidden = !enabled;
       schedule();
     },
   };

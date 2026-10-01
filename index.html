@@ -39,7 +39,11 @@
   <a class="skip" href="#cmd">Skip to the command line</a>
   <main class="stage">
     <h1 class="sr">Ezra Wu — Backend / Platform Engineer</h1>
-    <aside class="hud hud-left" id="hud-left" aria-hidden="true" hidden></aside>
+    <nav class="tabs" id="tabs" aria-label="View" hidden>
+      <button type="button" class="tab" data-view="gui" aria-pressed="false">Overview</button>
+      <button type="button" class="tab" data-view="term" aria-pressed="true">Terminal</button>
+    </nav>
+    <aside class="gui" id="gui" aria-label="Overview" hidden></aside>
     <div class="window" id="window">
       <header class="bar">
         <div class="dots" aria-hidden="true"><i></i><i></i><i></i></div>
@@ -101,7 +105,6 @@
         <button type="button" class="chip" data-cmd="help">help</button>
       </nav>
     </div>
-    <aside class="hud hud-right" id="hud-right" aria-label="Project map" hidden></aside>
   </main>
 </body>
 </html>

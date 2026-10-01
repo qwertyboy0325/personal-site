@@ -81,9 +81,10 @@ test('hud command: show, set, reject, localised', () => {
   const bad = execute('hud sideways', ctx());
   assert.deepEqual(bad.effects, []);
   assert.match(renderBlocks(bad.blocks), /unknown mode/);
-  assert.match(text('hud off', ctx({ lang: 'zh' })), /HUD 面板/);
+  assert.match(text('hud off', ctx({ lang: 'zh' })), /概覽區/);
+  assert.deepEqual(execute('gui off', ctx()).effects, [{ type: 'hud', value: 'off' }], '`gui` is an alias');
   assert.equal(complete('hud o').options.length, 2, 'on / off are both candidates');
-  assert.ok(ui.en.hudMapLabel && ui.zh.hudMapLabel && ui.en.hudEmpty && ui.zh.hudEmpty);
+  assert.ok(ui.en.hudRecent && ui.zh.hudRecent && ui.en.hudEmpty && ui.zh.hudEmpty);
 });
 
 test('matrix is a real theme: selectable and styled with readable contrast', async () => {
@@ -102,16 +103,23 @@ test('matrix is a real theme: selectable and styled with readable contrast', asy
   }
 });
 
-test('index.html: HUD asides exist, start hidden, and the right one is labelled', async () => {
+test('index.html: the overview pane and tabs exist and start hidden (JS reveals them)', async () => {
   const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
-  assert.match(html, /<aside class="hud hud-left" id="hud-left" aria-hidden="true" hidden>/);
-  assert.match(html, /<aside class="hud hud-right" id="hud-right" aria-label="[^"]+" hidden>/);
+  assert.match(html, /<aside class="gui" id="gui" aria-label="[^"]+" hidden>/);
+  assert.match(html, /<nav class="tabs" id="tabs" aria-label="[^"]+" hidden>/);
+  assert.match(html, /data-view="gui" aria-pressed="false"/);
+  assert.match(html, /data-view="term" aria-pressed="true"/);
+  assert.ok(!html.includes('hud-left') && !html.includes('hud-right'), 'the old side columns are gone');
 });
 
-test('stylesheet: HUD only shows on wide screens and never in print', async () => {
+test('stylesheet: split screen on wide screens, tabs on narrow ones, hidden in print', async () => {
   const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
-  assert.match(css, /\.hud \{ display: none; \}/);
-  assert.match(css, /@media \(min-width: 1320px\)\s*\{[^@]*html\[data-hud="on"\] \.hud \{ display: flex/);
-  assert.match(css, /@media print \{ \.hud \{ display: none !important; \} \}/);
+  assert.match(css, /\.gui, \.tabs \{ display: none; \}/);
+  assert.match(css, /@media \(min-width: 1000px\)\s*\{[^@]*html\[data-hud="on"\] \.gui \{ display: flex; \}/);
+  assert.match(css, /@media \(max-width: 999\.98px\)\s*\{[^@]*html\[data-hud="on"\] \.tabs \{ display: flex/);
+  assert.match(css, /html\[data-hud="on"\]\[data-view="gui"\] \.window \{ display: none; \}/);
+  assert.match(css, /@media print \{ \.gui, \.tabs \{ display: none !important; \} \}/);
   assert.match(css, /\.recent-btn \{[^}]*min-height: 24px/, 'targets meet the 24px WCAG 2.2 minimum');
+  assert.match(css, /\.tab \{[^}]*min-height: 44px/, 'tabs are touch-sized');
+  assert.ok(!css.includes('.node-core') && !css.includes('.map-lines'), 'the old project map styles are gone');
 });

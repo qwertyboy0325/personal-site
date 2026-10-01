@@ -2,7 +2,7 @@
 
 終端機風格的單頁互動個人網站。純 HTML / CSS / JavaScript：沒有框架、沒有第三方資源、應用本身不需要 build。
 
-在終端機裡輸入指令瀏覽內容，外圍是駭客風 HUD：即時遙測、可點擊的專案地圖、準星游標、ASCII 轉場與背景特效。
+左右分屏：左邊是 GUI 概覽（名片、專案與作品卡片、技能、即時遙測），右邊是終端機。點卡片會在終端機執行對應指令，在終端機輸入指令也會讓對應的卡片亮起。另有準星游標、ASCII 轉場、ASCII 3D 與背景特效。
 
 ## 執行
 
@@ -37,10 +37,10 @@ npm run build    # 重新產生 index.html 內的預渲染區塊
 | `fx [both\|rain\|network\|off]` | 背景特效 |
 | `transition [auto\|dissolve\|scan\|rain\|off]` | ASCII 轉場 |
 | `cursor [full\|minimal\|off]` | 準星游標；預設 `minimal`（小圓環＋會淡出的座標），`full` 才有滿版十字線 |
-| `hud [on\|off]` | 側邊 HUD 面板（螢幕寬度 1320px 以上） |
+| `hud [on\|off]`（別名 `gui`） | 左側概覽。≥ 1000px 與終端機左右並排；較窄時改用上方「概覽｜終端機」分頁 |
 | `clear` `history` | 清除畫面、歷史指令 |
 
-操作：`Tab` 補全、`↑/↓` 歷史、`Ctrl+L` 清除、`Ctrl+C` 取消、網址 `#about` `#projects` `#skills` `#contact` `#help` 可直接連到內容。選擇（主題、語言、特效、游標、HUD）會存在 `localStorage`。
+操作：`Tab` 補全、`↑/↓` 歷史、`Ctrl+L` 清除、`Ctrl+C` 取消、網址 `#about` `#projects` `#skills` `#contact` `#help` 可直接連到內容。選擇（主題、語言、特效、游標、概覽）會存在 `localStorage`。
 
 彩蛋（不在 help 裡）：`neofetch`、`whoami`、`sudo`、`exit`、`date`、`echo`。
 
@@ -52,8 +52,10 @@ src/content.js        所有文案（中英）、專案、技能 —— 要改�
 src/engine.js         指令引擎：純函式，沒有 DOM，可在 Node 測試
 src/render.js         區塊 -> HTML 字串，唯一的渲染器（瀏覽器與預渲染共用）
 src/main.js           DOM、鍵盤、主題、語言、開機、各效果的接線
-src/hud.js            HUD 面板（遙測、專案地圖、最近指令）
-src/hud-format.js     HUD 用的純格式化函式
+src/gui.js            左側概覽：由 content.js 產生專案/作品/技能卡片，與終端機雙向連動（純函式 + 小控制器）
+src/hud.js            概覽底部的即時遙測與最近指令（只在面板實際顯示時才運作）
+src/hud-format.js     遙測用的純格式化函式
+src/guard.js          啟動守門員（普通腳本）：主程式沒啟動時顯示原因，而不是一個沒反應的頁面
 src/fx/rain.js        字元雨           src/fx/network.js   點線網路
 src/fx/fx.js          背景 canvas      src/fx/face.js      ASCII 臉
 src/fx/ascii3d.js     ASCII 3D：曲面取樣 + z-buffer + 光影 -> 字元（純函式，可測試）
@@ -69,12 +71,13 @@ test/                 node:test 單元測試
 
 **可及性**
 - 輸出區是 `role="log"`；開機動畫期間 `aria-live="off"`，結束後才設為 `polite`。
-- 所有動畫特效（雨、網路、轉場、準星、HUD 左欄）都是 `aria-hidden`；轉場只在新輸出上疊一層 canvas，**不改動 DOM 文字**，所以螢幕閱讀器、選取與複製不受影響。
+- 所有動畫特效（雨、網路、轉場、準星、遙測面板）都是 `aria-hidden`；轉場只在新輸出上疊一層 canvas，**不改動 DOM 文字**，所以螢幕閱讀器、選取與複製不受影響。
 - 輸入框使用原生 `<input>`，注音等輸入法組字期間不會被快捷鍵干擾。
-- 有 skip link、`:focus-visible`、可由鍵盤操作的 HUD 專案地圖。
+- 有 skip link、`:focus-visible`；概覽卡片是真正的 `<button>`，可用鍵盤操作；分頁用 `aria-pressed`。
+- 如果主程式在某個瀏覽器沒有啟動，`src/guard.js` 會在 3 秒後顯示說明框與實際錯誤，內容（預渲染）仍可閱讀。
 - 三個以上主題的所有文字顏色對比都 ≥ 4.5:1（`npm run e2e` 逐一量測）。
 - `prefers-reduced-motion`：不啟動轉場、背景動畫、準星波紋與眼睛追蹤。
-- 觸控裝置不顯示準星。HUD 只依螢幕寬度顯示（≥ 1320px，所以橫放的大型平板也會出現），其中的按鈕高度 ≥ 24px（WCAG 2.2 最低標準）。
+- 觸控裝置不顯示準星。概覽依螢幕寬度顯示（≥ 1000px 並排，較窄用分頁，所以平板與手機也能用），卡片與分頁高度 ≥ 44px，遙測中的最近指令按鈕 ≥ 24px（WCAG 2.2 最低標準）。
 - 快捷指令按鈕高度 44px；右上角工具列按鈕高 36px、寬 44px。
 
 **安全與隱私**
@@ -99,8 +102,8 @@ test/                 node:test 單元測試
 
 ## 測試
 
-- `test/*.test.mjs`：指令引擎、補全、跳脫、內容完整性（中英同構）、CSP 與 SEO 必備項目、預渲染是否同步、臉的決定性與座標範圍、轉場數學、準星、HUD 格式化與樣式規則。
-- `scripts/e2e.mjs`：真實 Chrome（DevTools Protocol）。涵蓋鍵盤操作、主題循環、語言切換、轉場、準星、HUD 版面與互動、對比度、手機版面、無 JS、減少動態、觸控模擬，並檢查全程沒有 console 錯誤或 CSP 違規。
+- `test/*.test.mjs`：指令引擎、補全、跳脫、內容完整性（中英同構）、CSP 與 SEO 必備項目、預渲染是否同步、臉的決定性與座標範圍、轉場數學、準星、概覽卡片（含雙向連動的對應規則）、遙測格式化、啟動守門員與樣式規則。
+- `scripts/e2e.mjs`：真實 Chrome（DevTools Protocol）。涵蓋鍵盤操作、主題循環、語言切換、轉場、準星、分屏版面與卡片連動、窄螢幕分頁、對比度、手機版面、無 JS、減少動態、觸控模擬、故意弄壞的網站（驗證啟動說明框），並檢查全程沒有 console 錯誤或 CSP 違規。
 
 ## 尚未完成（需要你提供資料或決定）
 
@@ -112,5 +115,5 @@ test/                 node:test 單元測試
 
 ## 備註
 
-- `src/fx/` 內的字元雨、網路圖與 ASCII 臉由另一個 agent 撰寫後併入；ASCII 3D、轉場、準星、HUD 與 matrix 主題是之後加上的。
+- `src/fx/` 內的字元雨、網路圖與 ASCII 臉由另一個 agent 撰寫後併入；ASCII 3D、轉場、準星、左右分屏概覽、啟動守門員與 matrix 主題是之後加上的。
 - 人臉維持 ASCII 風格（曾做過一版 SVG 臉，已依需求移除）。

@@ -8,6 +8,7 @@ import { createTransitions } from './fx/wipe.js';
 import { TRANSITION_MODES } from './fx/transition.js';
 import { createReticle, CURSOR_MODES } from './fx/reticle.js';
 import { createHud } from './hud.js';
+import { createGui } from './gui.js';
 
 const $ = (id) => document.getElementById(id);
 const log = $('log');
@@ -76,8 +77,27 @@ const backdrop = createFx($('fx'), { reduceMotion });
 // Targeting reticle that follows the pointer (fine pointers only; `cursor off` restores the native one).
 const reticle = createReticle({ reduceMotion });
 
-// GUI panels beside the terminal (>= 1320px wide): telemetry, project map, recent commands.
+// The overview pane (cards + live telemetry): beside the terminal on wide screens, behind a tab on narrow ones.
+const guiEl = $('gui');
+const tabs = $('tabs');
+const narrow = matchMedia('(max-width: 999.98px)');
+const gui = createGui({ root: guiEl });
+gui.render(state.lang);
 const hud = createHud({ left: $('hud-left'), right: $('hud-right'), getState: () => ctx(), getPointer: () => reticle.pointer, reduceMotion });
+
+function setView(view) {
+  document.documentElement.dataset.view = view;
+  tabs.querySelectorAll('[data-view]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === view)));
+  hud.reschedule();
+}
+
+function applyHud(on) {
+  // Show or hide first: the telemetry only runs while its panels are actually on screen.
+  guiEl.hidden = !on;
+  tabs.hidden = !on;
+  if (!on) setView('term');
+  hud.setEnabled(on); // also (re)starts or stops the telemetry timers
+}
 
 // ASCII transitions: a dissolving overlay on new output, and a page wipe for theme / language / clear.
 const cssVar = (name, fallback) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
@@ -165,6 +185,10 @@ function applyLang(lang, persist) {
   $('btn-fx').setAttribute('aria-label', t.fxButton);
   $('btn-fx').title = t.fxButton;
   document.querySelector('.skip').textContent = t.skip;
+  tabs.setAttribute('aria-label', t.gui.tabs);
+  tabs.querySelector('[data-view="gui"]').textContent = t.gui.tabGui;
+  tabs.querySelector('[data-view="term"]').textContent = t.gui.tabTerm;
+  gui.render(lang);
   if (persist) store.set('lang', lang);
 }
 
@@ -174,7 +198,7 @@ function applyEffects(effects) {
     else if (fx.type === 'theme') applyTheme(fx.value, true);
     else if (fx.type === 'lang') applyLang(fx.value, true);
     else if (fx.type === 'fx') applyFx(fx.value, true);
-    else if (fx.type === 'hud') { state.hud = fx.value; hud.setEnabled(fx.value === 'on'); store.set('hud', fx.value); }
+    else if (fx.type === 'hud') { state.hud = fx.value; applyHud(fx.value === 'on'); store.set('hud', fx.value); }
     else if (fx.type === 'cursor') { state.reticle = fx.value; reticle.setMode(fx.value); store.set('cursor', fx.value); }
     else if (fx.type === 'transition') { state.transition = fx.value; store.set('transition', fx.value); }
     else if (fx.type === 'open') window.open(fx.url, '_blank', 'noopener,noreferrer');
@@ -198,6 +222,7 @@ function run(line, { record = true } = {}) {
   const apply = () => {
     applyEffects(res.effects.filter((e) => e.type !== 'open'));
     if (!clearing) print([{ t: 'echo', v: trimmed }, ...res.blocks], { reveal: !wiping });
+    gui.setActive(trimmed);
     hud.refresh();
   };
   // Theme, language and clear swap state while the page is covered in glyphs.
@@ -278,11 +303,18 @@ function onCommandClick(e) {
   const btn = e.target.closest('[data-cmd]');
   if (!btn || state.booting) return;
   run(btn.dataset.cmd);
+  // On a narrow screen the overview replaces the terminal, so show the result.
+  if (guiEl.contains(btn) && narrow.matches) setView('term');
   if (finePointer) input.focus({ preventScroll: true });
 }
 log.addEventListener('click', onCommandClick);
 chips.addEventListener('click', onCommandClick);
-$('hud-right').addEventListener('click', onCommandClick);
+guiEl.addEventListener('click', onCommandClick); // cards and the recent-commands list
+tabs.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-view]');
+  if (b) setView(b.dataset.view);
+});
+narrow.addEventListener('change', () => hud.reschedule());
 
 // Clicking empty terminal space focuses the prompt, unless the user is selecting text.
 win.addEventListener('click', (e) => {
@@ -318,7 +350,8 @@ window.__siteReady = true; // tells src/guard.js the terminal is operable
 document.querySelector('.boot-fail')?.remove(); // it may have appeared on a very slow load
 $('btn-fx').hidden = false;
 reticle.setMode(state.reticle);
-hud.setEnabled(state.hud === 'on');
+setView('term');
+applyHud(state.hud === 'on');
 hud.refresh();
 applyFx(state.fx, false); // starts immediately, so the rain also plays behind the boot lines
 boot();
