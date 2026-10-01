@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Ezra Wu — Backend / Platform Engineer</title>
+  <meta name="description" content="Ezra Wu is a software engineer who makes the behind-the-scenes parts of products reliable, so messages are not lost, actions are not repeated and data is not overwritten. An interactive, console-style portfolio.">
+  <meta name="author" content="Ezra Wu">
+  <meta name="color-scheme" content="dark light">
+  <meta name="theme-color" content="#0b0f14" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#eef0ec" media="(prefers-color-scheme: light)">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Ezra Wu — Backend / Platform Engineer">
+  <meta property="og:description" content="Software that quietly loses messages, repeats actions or overwrites data: Ezra Wu finds out why and fixes it. Try the portfolio as a terminal.">
+  <meta name="twitter:card" content="summary">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="src/styles.css">
+  <link rel="modulepreload" href="src/main.js">
+  <link rel="modulepreload" href="src/engine.js">
+  <link rel="modulepreload" href="src/content.js">
+  <link rel="modulepreload" href="src/render.js">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Person",
+    "name": "Ezra Wu",
+    "jobTitle": "Backend / Platform Engineer",
+    "sameAs": ["https://github.com/qwertyboy0325"]
+  }
+  </script>
+  <script type="module" src="src/main.js"></script>
+</head>
+<body>
+  <canvas id="fx" aria-hidden="true" hidden></canvas>
+  <canvas id="wipe" aria-hidden="true" hidden></canvas>
+  <a class="skip" href="#cmd">Skip to the command line</a>
+  <main class="stage">
+    <h1 class="sr">Ezra Wu — Backend / Platform Engineer</h1>
+    <aside class="hud hud-left" id="hud-left" aria-hidden="true" hidden></aside>
+    <div class="window" id="window">
+      <header class="bar">
+        <div class="dots" aria-hidden="true"><i></i><i></i><i></i></div>
+        <div class="title" aria-hidden="true">ezra@site: ~</div>
+        <div class="tools">
+          <button type="button" class="tool" id="btn-theme" aria-label="Cycle colour theme" title="Cycle colour theme">◐</button>
+          <button type="button" class="tool" id="btn-fx" aria-label="Cycle background effect" title="Cycle background effect" hidden>fx</button>
+          <button type="button" class="tool" id="btn-lang" aria-label="Switch language" title="Switch language">中</button>
+        </div>
+      </header>
+      <div class="screen" id="screen">
+        <!-- Pre-rendered (English) so the page is readable without JavaScript. -->
+        <div id="log" role="log" aria-live="off" aria-label="Terminal output">
+<!-- prerender:start -->
+<section class="entry"><div class="row"><pre class="art ascii-face" role="img" aria-label="Animated ASCII face" data-ascii-face>            ######***+
+        ##%%%%%#####***++=
+      #%%%%%%%%%%####***++=-
+     %%%%%%%%%%%%%####***++=-
+   #%%%%%%%%%%%%%%####***++==-:
+  #%%%%%%%%%%%%%%%####***++==--:
+ *#%%%%%%%%%%%%%%####****++==--:.
+ ##%%%%%%%%%%%%%#####***+++==--:.
+*##%%%%=  @  =######=  @  ===--:.
+*###%%.  @@@  .####.  @@@  .---:.
+*#######.....###::***.....==--::.
+**#############*::**++++===--::..
++***########****::*++++===--::..
+=+*************o++o++====--:::.
+ =++*********++++++====---:::.
+ -=++++++++++++++====----::..
+  -===+++++========--==:::..
+   :-================:::..
+     :-----------::::...
+      .:::::::::::....
+         .........
+</pre><pre class="art" aria-hidden="true">█████  █████  ████    ███
+█         █   █   █  █   █
+████     █    ████   █████
+█       █     █  █   █   █
+█████  █████  █   █  █   █</pre></div><p><strong class="em">Ezra Wu</strong> — Backend / Platform Engineer</p><p>I make the behind-the-scenes parts of software reliable: no lost messages, no repeated actions, no overwritten data.</p><p>Type <code class="cmd">help</code> or tap a command below. Tab completes, ↑ recalls.</p></section>
+<section class="entry"><div class="echo"><span class="ps1" aria-hidden="true">ezra@site:~$</span> <span class="typed">about</span></div><h2 class="h">about</h2><p>I am a software engineer (Backend / Platform Engineer). I help teams that already have a working product fix the hidden reliability problems behind it: the database, the background jobs, and the way different parts of a system pass messages to each other.</p><p>My specialty is failures that look safe but are not: something that can occasionally happen twice, get lost, or be overwritten. Think of an order that is saved but never announced to the warehouse, or a notification that goes out twice.</p><p>Work is fixed-scope: a diagnosis, a review of the design and code, reproducing the problem on purpose, then the fix. Everything is written down, communication is asynchronous, and payment follows milestones.</p><h2 class="h">how I work</h2><blockquote class="quote">I do not just say it works; I show how I know. Every claim is tied to a test, a document, or an honest note of what is not claimed. When something goes wrong in timing or in the numbers, I make it visible instead of smoothing it over.</blockquote><p>Next: <code class="cmd">projects</code>, <code class="cmd">skills</code>, <code class="cmd">contact</code></p></section>
+<section class="entry"><div class="echo"><span class="ps1" aria-hidden="true">ezra@site:~$</span> <span class="typed">projects</span></div><h2 class="h">projects</h2><ul class="list"><li><span class="dim">1.</span> <code class="cmd">handoff-semantics</code><span class="dim">  Making sure messages between systems are never lost</span></li><li><span class="dim">2.</span> <code class="cmd">vox-proof</code><span class="dim">  A second pair of eyes for subtitles and transcripts</span></li><li><span class="dim">3.</span> <code class="cmd">echlub</code><span class="dim">  The groundwork for making music together online</span></li><li><span class="dim">4.</span> <code class="cmd">echlub-demo</code><span class="dim">  A clickable demo of the music tool idea</span></li></ul><p>Public projects. Run <code class="cmd">project 1</code> (or a name) for details.</p></section>
+<section class="entry"><div class="echo"><span class="ps1" aria-hidden="true">ezra@site:~$</span> <span class="typed">works</span></div><h2 class="h">works</h2><p><span class="dim">Visual and 3D</span></p><ul class="list"><li><code class="cmd">1. Black hole renderer</code><span class="dim sub">Drawing how a black hole bends light</span></li><li><code class="cmd">2. Explosion effects studies</code><span class="dim sub">Studying how to make explosion effects look convincing</span></li></ul><p><span class="dim">Research and thinking</span></p><ul class="list"><li><code class="cmd">3. An AI that has to ask permission</code><span class="dim sub">A personal AI that runs on my own computer and needs a person to approve changes</span></li><li><code class="cmd">4. How to prove a system is right, not just fast</code><span class="dim sub">A checklist for deciding whether a change is safe to release</span></li><li><code class="cmd">5. A business plan that shows its evidence</code><span class="dim sub">Turning a business idea into claims that can be tested</span></li></ul><p><span class="dim">Design</span></p><ul class="list"><li><code class="cmd">6. A backpack that nudges you to sit up straight</code><span class="dim sub">A wearable design proposal that is honest about what is not tested yet</span></li></ul><p>Run <code class="cmd">work 1</code> (or a name) for details. These are described without private names, partners or figures.</p></section>
+<section class="entry"><div class="echo"><span class="ps1" aria-hidden="true">ezra@site:~$</span> <span class="typed">skills</span></div><h2 class="h">skills</h2><dl class="kv"><dt>What I fix</dt><dd>Things that happen twice, or not at all (retries and duplicates) · Messages that get lost between systems (outbox / inbox) · Several workers editing the same data at the same time · Database changes that are all-or-nothing, safe upgrades, and each customer&#39;s data kept apart</dd><dt>Tools I build with</dt><dd>C# / .NET 8 · Rust · TypeScript · Go · PostgreSQL (database)</dd><dt>How I work</dt><dd>Reproduce the problem on purpose, then prove the fix · Automated tests, including against a real database · Design decisions written down · Only claim what the tests and documents support</dd></dl></section>
+<section class="entry"><div class="echo"><span class="ps1" aria-hidden="true">ezra@site:~$</span> <span class="typed">contact</span></div><h2 class="h">contact</h2><dl class="kv"><dt>github</dt><dd><a class="lnk" href="https://github.com/qwertyboy0325" target="_blank" rel="noopener noreferrer">github.com/qwertyboy0325</a></dd><dt>how</dt><dd>Tell me what is going wrong in plain words, and what system you use if you know. I reply in writing.</dd></dl></section>
+<!-- prerender:end -->
+        </div>
+        <form id="prompt" class="prompt" action="#" autocomplete="off" hidden>
+          <span class="ps1" aria-hidden="true">ezra@site:~$</span>
+          <input id="cmd" type="text" name="command" aria-label="Command input" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go">
+        </form>
+      </div>
+      <nav class="chips" id="chips" aria-label="Quick commands" hidden>
+        <button type="button" class="chip" data-cmd="about">about</button>
+        <button type="button" class="chip" data-cmd="projects">projects</button>
+        <button type="button" class="chip" data-cmd="works">works</button>
+        <button type="button" class="chip" data-cmd="skills">skills</button>
+        <button type="button" class="chip" data-cmd="contact">contact</button>
+        <button type="button" class="chip" data-cmd="help">help</button>
+      </nav>
+    </div>
+    <aside class="hud hud-right" id="hud-right" aria-label="Project map" hidden></aside>
+  </main>
+</body>
+</html>
