@@ -314,6 +314,8 @@ applyLang(state.lang, false);
 if (state.theme) applyTheme(state.theme, false);
 form.hidden = false;
 chips.hidden = false;
+window.__siteReady = true; // tells src/guard.js the terminal is operable
+document.querySelector('.boot-fail')?.remove(); // it may have appeared on a very slow load
 $('btn-fx').hidden = false;
 reticle.setMode(state.reticle);
 hud.setEnabled(state.hud === 'on');

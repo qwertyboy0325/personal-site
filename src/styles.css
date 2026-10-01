@@ -460,3 +460,9 @@ html.rt-on input { cursor: text; }
 .recent-btn::before { content: "▸ "; color: var(--dim); white-space: pre; }
 .recent-btn:hover { border-color: var(--line); color: var(--accent); }
 @media print { .hud { display: none !important; } }
+
+/* ---- start-up notice (src/guard.js): only shown when the terminal failed to start ---- */
+.boot-fail { margin: 0 0 16px; padding: 12px 14px; border: 1px solid var(--accent2); border-left-width: 4px; border-radius: 4px; background: color-mix(in srgb, var(--accent2) 10%, var(--panel)); color: var(--fg); }
+.boot-fail strong { color: var(--accent2); }
+.boot-fail p { margin: 4px 0 10px; }
+.boot-fail pre { margin: 6px 0 0; padding: 8px; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 12px; color: var(--dim); background: var(--bg); border-radius: 3px; user-select: all; }

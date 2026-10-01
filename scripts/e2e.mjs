@@ -483,6 +483,42 @@ try {
   await viewport(1280, 800);
   await ev(`localStorage.clear()`);
 
+  console.log('start-up watchdog (src/guard.js)');
+  await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }, { name: 'prefers-reduced-motion', value: 'no-preference' }] });
+  await load('about:blank');
+  await load(BASE);
+  await bootDone();
+  await sleep(3600); // longer than the watchdog's wait
+  check((await ev(`window.__siteReady === true`)) && !(await ev(`!!document.querySelector('.boot-fail')`)), 'a healthy page sets the ready flag and never shows the start-up notice');
+  const brokenSite = async (label, mutate, expected) => {
+    const dir = await mkdtemp(join(tmpdir(), 'site-broken-'));
+    const errorsBefore = consoleErrors.length; // this scenario fails on purpose; its errors are not test failures
+    let server;
+    try {
+      await cp(ROOT, dir, { recursive: true, filter: (src) => !/[\\/](\.git|node_modules|\.shots)([\\/]|$)/.test(src) });
+      await mutate(dir);
+      server = spawn(process.execPath, [join(ROOT, 'scripts/serve.mjs'), '5197'], { stdio: 'ignore', env: { ...process.env, SITE_ROOT: dir, LIVERELOAD: '0' } });
+      await until(() => fetch('http://127.0.0.1:5197/').then((r) => r.ok), 8000, 'broken-site server');
+      await load('about:blank');
+      await load('http://127.0.0.1:5197/');
+      await until(() => ev(`!!document.querySelector('.boot-fail')`), 8000, `${label}: notice appears`);
+      const info = await ev(`({ text: document.querySelector('.boot-fail').innerText, role: document.querySelector('.boot-fail').getAttribute('role'), promptHidden: document.getElementById('prompt').hidden, content: document.getElementById('log').innerText })`);
+      check(expected.test(info.text), `${label}: the notice names the real cause`, info.text.replace(/\s+/g, ' ').slice(0, 260));
+      check(info.role === 'alert' && info.text.includes('互動式終端機沒有'), `${label}: the notice is an accessible alert and bilingual`);
+      check(info.content.includes('handoff-semantics') && info.content.includes('Black hole renderer'), `${label}: the pre-rendered content is still readable`);
+      check(info.promptHidden, `${label}: no broken prompt is shown`);
+      if (label.startsWith('main.js throws')) await shot('19-startup-notice', 200);
+    } finally {
+      await load('about:blank').catch(() => {});
+      server?.kill();
+      await rm(dir, { recursive: true, force: true }).catch(() => {});
+      consoleErrors.splice(errorsBefore);
+    }
+  };
+  await brokenSite('main.js throws', async (dir) => { const f = join(dir, 'src/main.js'); await writeFile(f, `throw new Error('simulated start-up failure');\n${await readFile(f, 'utf8')}`); }, /simulated start-up failure/);
+  await brokenSite('a module file is missing', async (dir) => { await rm(join(dir, 'src/engine.js')); }, /failed to load|engine\.js|main\.js/);
+  await brokenSite('main.js is blocked by CSP rules', async (dir) => { const f = join(dir, 'src/main.js'); await writeFile(f, `eval('1');\n${await readFile(f, 'utf8')}`); }, /Content-Security-Policy|unsafe-eval|EvalError|eval/i);
+
   console.log('live reload (dev server, on a temp copy of the site)');
   const lrDir = await mkdtemp(join(tmpdir(), 'site-lr-'));
   const lrPort = 5198;
