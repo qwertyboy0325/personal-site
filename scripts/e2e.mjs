@@ -1241,62 +1241,92 @@ try {
   console.log('camera mirror (a made-up camera: nothing real is filmed)');
   await viewport(1440, 900);
   await load('about:blank'); await load(BASE); await bootDone();
-  const mir = () => ev(`(() => { const f = document.querySelector('#log .mirror'); if (!f) return null; const q = (s) => f.querySelector(s); return { state: f.dataset.state, startHidden: q('[data-mirror-start]').hidden, stopHidden: q('[data-mirror-stop]').hidden, copyHidden: q('[data-mirror-copy]').hidden, preHidden: q('.mirror-ascii').hidden, status: q('.mirror-status').textContent, text: q('.mirror-ascii').textContent, video: !!f.querySelector('video') && f.querySelector('video').srcObject !== null, count: document.querySelectorAll('#log .mirror').length }; })()`);
+  const mir = () => ev(`(() => { const f = document.querySelector('#log .mirror'); if (!f) return null; const q = (s) => f.querySelector(s); const st = document.querySelector('dialog.mirror-stage[open]'); const pre = st ? st.querySelector('.ms-ascii') : q('.mirror-ascii'); const v = f.querySelector('video'); return { phase: f.dataset.phase, state: f.dataset.state, startHidden: q('[data-mirror-start]').hidden, stopHidden: q('[data-mirror-stop]').hidden, copyHidden: q('[data-mirror-copy]').hidden, status: q('.mirror-status').textContent, text: pre.textContent, video: !!v && v.srcObject !== null, stage: !!st, dialogs: document.querySelectorAll('dialog.mirror-stage').length, count: document.querySelectorAll('#log .mirror').length }; })()`);
+  const stageGeo = () => ev(`(() => { const st = document.querySelector('dialog.mirror-stage[open]'); if (!st) return null; const pre = st.querySelector('.ms-ascii'); const view = st.querySelector('.ms-view'); const v = document.querySelector('#log .mirror video'); const d = st.getBoundingClientRect(); const p = pre.getBoundingClientRect(); const vr = view.getBoundingClientRect(); const cs = getComputedStyle(pre); const lines = pre.textContent.split('\\n'); const longest = lines.reduce((a, b) => (b.length > a.length ? b : a), ''); const m = document.createElement('span'); m.style.position = 'absolute'; m.style.visibility = 'hidden'; m.style.whiteSpace = 'pre'; m.style.font = cs.font; m.textContent = longest; document.body.append(m); const textW = m.getBoundingClientRect().width; m.remove(); const lineH = parseFloat(cs.lineHeight); return { linesH: lines.length * lineH, preH: p.height, dlg: [Math.round(d.width), Math.round(d.height)], vw: innerWidth, vh: innerHeight, pre: [Math.round(p.width), Math.round(p.height)], view: [Math.round(vr.width), Math.round(vr.height)], videoRatio: v.videoHeight / v.videoWidth, preRatio: p.height / p.width, textW, cols: longest.length, rows: lines.length, inside: p.left >= vr.left - 1 && p.right <= vr.right + 1 && p.top >= vr.top - 1 && p.bottom <= vr.bottom + 1, doc: document.documentElement.scrollWidth - innerWidth, align: cs.textAlign, mono: cs.fontFamily === getComputedStyle(document.body).fontFamily }; })()`);
+  const goLive = async (label) => {
+    await ev(`document.querySelector('#log [data-mirror-start]').click()`);
+    try { await until(async () => (await mir()).state === 'live' && (await mir()).stage, 8000, label); } catch (e) { throw new Error(`${label}: ${JSON.stringify({ ...(await mir()), text: 0 })}`); }
+  };
   await typeText('mirror'); await enter();
   await until(async () => !!(await mir()), 3000, 'mirror figure');
   const cam0 = await mir();
-  check(cam0.state === 'ready' && !cam0.video && cam0.preHidden && cam0.stopHidden && !cam0.startHidden, 'the mirror asks first: it explains itself and does not touch the camera until the button is pressed', JSON.stringify(cam0));
+  check(cam0.state === 'ready' && !cam0.video && !cam0.stage && cam0.stopHidden && !cam0.startHidden, 'the mirror asks first: it explains itself and does not touch the camera (or open anything) until the button is pressed', JSON.stringify({ ...cam0, text: 0 }));
   check((await ev(`document.querySelector('#log .mirror-intro').textContent`)).includes('Nothing is recorded, saved or sent anywhere'), 'the explanation says nothing is recorded, saved or sent');
   await shot('30-mirror-ask', 400);
   await ev(`document.querySelector('#log [data-mirror-start]').click()`);
-  await until(async () => (await mir()).state === 'live', 8000, 'camera live');
-  await sleep(700);
+  await until(async () => (await mir()).state === 'live' && (await mir()).stage, 8000, 'camera live in the big view');
+  await sleep(900);
   const cam1 = await mir();
-  check(cam1.video && !cam1.preHidden && !cam1.stopHidden && !cam1.copyHidden && cam1.startHidden && cam1.status.includes('Camera on'), 'after pressing the button the camera runs and the letters appear, with Stop and Copy', JSON.stringify({ ...cam1, text: cam1.text.length }));
+  check(cam1.video && cam1.stage && cam1.dialogs === 1 && cam1.status.includes('Camera on'), 'after pressing the button the camera runs and the big view opens', JSON.stringify({ ...cam1, text: cam1.text.length }));
+  const geo1 = await stageGeo();
+  check(geo1.dlg[0] >= geo1.vw * 0.95 && geo1.dlg[1] >= geo1.vh * 0.92, 'the big view fills nearly the whole window', JSON.stringify(geo1));
+  check(Math.abs(geo1.preRatio - geo1.videoRatio) / geo1.videoRatio < 0.01, 'the picture keeps the camera\'s own shape (no stretching)', JSON.stringify({ pre: geo1.pre, cam: geo1.videoRatio, got: geo1.preRatio }));
+  check(geo1.inside && (geo1.pre[0] >= geo1.view[0] - 20 || geo1.pre[1] >= geo1.view[1] - 20), 'and it is as large as the window allows, without being cut off', JSON.stringify({ pre: geo1.pre, view: geo1.view }));
+  check(Math.abs(geo1.textW - geo1.pre[0]) / geo1.pre[0] < 0.015 && geo1.align === 'left' && geo1.mono && geo1.doc <= 0, 'the letters span the picture exactly, in the terminal font, without scrolling the page', JSON.stringify({ textW: geo1.textW, pre: geo1.pre }));
+  check(Math.abs(geo1.linesH - geo1.preH) / geo1.preH < 0.02, 'the lines of letters fill the picture\'s height exactly (the face is not squashed to half height)', JSON.stringify({ lines: geo1.rows, lineH: geo1.linesH, boxH: geo1.preH }));
+  check(geo1.cols >= 100 && geo1.cols <= 140, 'there is room for more characters than the small box (100 to 140)', String(geo1.cols));
   const camLines1 = cam1.text.split('\n');
+  check(camLines1.length >= 30 && /^[ .:\-=+*#%@\n]+$/.test(cam1.text), 'the frame is made of the usual characters', `${camLines1.length} lines`);
   await until(() => ev(`!!document.querySelector('#log .mirror').dataset.perf`), 8000, 'frame timing available');
   const perfInfo = JSON.parse((await ev(`document.querySelector('#log .mirror').dataset.perf ?? 'null'`)) ?? 'null');
-  check(perfInfo && perfInfo.read + perfInfo.text + perfInfo.dom < 25 && perfInfo.dom < 3 && perfInfo.interval <= 100, 'a frame costs only a few milliseconds (reading the camera, making the text, updating the page) and keeps the full frame rate', JSON.stringify(perfInfo));
-  check(camLines1.length >= 15 && /^[ .:\-=+*#%@\n]+$/.test(cam1.text) && Math.max(...camLines1.map((l) => l.length)) >= 60, 'the frame is made of the usual characters, about 60 to 100 wide', `${camLines1.length} lines`);
-  await sleep(700);
+  check(perfInfo && perfInfo.read + perfInfo.text + perfInfo.dom < 30 && perfInfo.dom < 4 && perfInfo.interval <= 130, 'even this large, a frame costs only a few milliseconds and keeps (nearly) the full frame rate', JSON.stringify(perfInfo));
   const cam2 = await mir();
-  check(cam2.text !== cam1.text, 'it is live: the letters change from frame to frame');
-  const geo = await ev(`(() => { const p = document.querySelector('#log .mirror-ascii'); const r = p.getBoundingClientRect(); const pane = document.getElementById('screen').getBoundingClientRect(); const cs = getComputedStyle(p); return { w: Math.round(r.width), inside: r.right <= pane.right + 1, scrollW: p.scrollWidth, clientW: p.clientWidth, align: cs.textAlign, mono: cs.fontFamily === getComputedStyle(document.body).fontFamily, doc: document.documentElement.scrollWidth - innerWidth }; })()`);
-  check(geo.inside && geo.scrollW <= geo.clientW + 1 && geo.align === 'left' && geo.mono && geo.doc <= 0, 'the letters fit their box, in the terminal font, without scrolling the page', JSON.stringify(geo));
+  await sleep(700);
+  check((await mir()).text !== cam2.text, 'it is live: the letters change from frame to frame');
   await shot('30-mirror-live', 100);
+  // Resizing the window: the picture follows and keeps its shape
+  for (const [w, h] of [[1000, 600], [700, 900], [1900, 700]]) {
+    await viewport(w, h);
+    await sleep(600);
+    const g2 = await stageGeo();
+    check(g2.inside && Math.abs(g2.preRatio - g2.videoRatio) / g2.videoRatio < 0.012 && g2.dlg[0] >= w * 0.94 && g2.doc <= 0 && (g2.pre[0] >= g2.view[0] - 24 || g2.pre[1] >= g2.view[1] - 24), `resizing the window to ${w}x${h}: it refits and keeps its shape`, JSON.stringify({ pre: g2.pre, view: g2.view, ratio: [g2.preRatio, g2.videoRatio] }));
+  }
+  await viewport(1440, 900);
+  await sleep(500);
   // Copy one frame as text
-  await ev(`document.querySelector('#log [data-mirror-copy]').click()`);
+  await ev(`document.querySelector('dialog.mirror-stage .ms-copy').click()`);
   await until(() => ev(`document.getElementById('toast').classList.contains('show')`), 3000, 'toast');
   check((await ev(`document.getElementById('toast').textContent`)).length > 5, 'copying a frame tells you how it went');
-  // Stop with the button
-  await ev(`document.querySelector('#log [data-mirror-stop]').click()`);
-  await sleep(300);
+  check(await ev(`document.querySelector('dialog.mirror-stage .ms-full') !== null`), 'there is a full-screen button (hidden where the browser cannot do it)');
+  // Close = stop
+  await ev(`document.querySelector('dialog.mirror-stage .ms-close').click()`);
+  await sleep(400);
   const cam3 = await mir();
-  check(cam3.state === 'off' && !cam3.video && cam3.preHidden && !cam3.startHidden && cam3.status === 'Camera off.', 'Stop releases the camera (no stream left) and offers to start again', JSON.stringify({ ...cam3, text: 0 }));
-  const frozen = (await mir()).text;
-  await sleep(500);
-  check((await mir()).text === frozen, 'and the letters no longer change');
-  // Esc stops it too, and `mirror off` as well
-  await ev(`document.querySelector('#log [data-mirror-start]').click()`);
-  await until(async () => (await mir()).state === 'live', 8000, 'live again');
-  await ev(`document.querySelector('#log .mirror').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
+  check(cam3.state === 'off' && !cam3.video && !cam3.stage && cam3.dialogs === 0 && !cam3.startHidden && cam3.status === 'Camera off.', 'closing the big view releases the camera (no stream left) and offers to start again', JSON.stringify({ ...cam3, text: 0 }));
+  // Esc closes and stops
+  await goLive('live again');
+  await key('Escape', 'Escape', 27);
+  await until(async () => (await mir()).state === 'off', 3000, 'esc stops');
+  check((await mir()).dialogs === 0 && !(await mir()).video, 'Esc closes the big view and turns the camera off');
+  // `mirror off`
+  await goLive('live a third time');
+  await ev(`document.querySelector('dialog.mirror-stage .ms-close').blur?.()`);
+  await ev(`window.__runMirrorOff = true`);
+  await ev(`document.querySelector('dialog.mirror-stage').close(); void 0`);
   await sleep(300);
-  check((await mir()).state === 'off', 'Esc turns the camera off');
-  await ev(`document.querySelector('#log [data-mirror-start]').click()`);
-  await until(async () => (await mir()).state === 'live', 8000, 'live a third time');
-  await typeText('mirror off'); await enter(); await sleep(400);
-  check((await mir()).state === 'off' && !(await mir()).video, 'the command `mirror off` turns it off');
+  check((await mir()).state === 'off' && !(await mir()).video, 'closing it by any route (here: the dialog itself) turns the camera off');
   // Moving to another page lets go of the camera
-  await ev(`document.querySelector('#log [data-mirror-start]').click()`);
-  await until(async () => (await mir()).state === 'live', 8000, 'live a fourth time');
-  const held = () => ev(`(() => new Promise((res) => navigator.mediaDevices.enumerateDevices().then(() => res(window.__mirrorStreams ?? null))))()`);
+  await goLive('live a fourth time');
+  await ev(`document.querySelector('dialog.mirror-stage .ms-close').click()`);
+  await sleep(200);
   await typeText('about'); await enter(); await sleep(600);
-  check((await mir()) === null, 'opening another page removes the mirror (and with it the camera)');
+  check((await mir()) === null && (await ev(`document.querySelectorAll('dialog.mirror-stage').length`)) === 0, 'opening another page removes the mirror (and with it the camera and the big view)');
+  // Leaving the page while it is on (history Back) also lets go
+  await typeText('mirror'); await enter();
+  await until(async () => !!(await mir()), 3000, 'mirror again');
+  await goLive('live before back');
+  await ev(`history.back()`);
+  await sleep(1200);
+  check((await ev(`document.querySelectorAll('dialog.mirror-stage').length`)) === 0 && (await ev(`!document.querySelector('#log .mirror')`)), 'going Back while the camera is on closes the big view and releases the camera');
   // Language: the wording follows
   await typeText('lang zh'); await enter(); await sleep(900);
   await typeText('mirror'); await enter();
   await until(async () => !!(await mir()), 3000, 'zh mirror');
   check((await ev(`document.querySelector('#log .mirror-intro').textContent`)).includes('不會被錄影、儲存，也不會傳到任何地方') && (await ev(`document.querySelector('#log [data-mirror-start]').textContent`)) === '▶ 開啟相機', 'in Chinese the explanation and buttons are Chinese');
+  await ev(`document.querySelector('#log [data-mirror-start]').click()`);
+  await until(async () => (await mir()).stage, 8000, 'zh big view');
+  check((await ev(`document.querySelector('dialog.mirror-stage .ms-close').getAttribute('aria-label')`)) === '關閉並關掉相機' && (await ev(`document.querySelector('dialog.mirror-stage .ms-copy').textContent`)) === '複製成文字', 'and so are the big view\'s buttons');
+  await ev(`document.querySelector('dialog.mirror-stage .ms-close').click()`);
   await typeText('lang en'); await enter(); await sleep(900);
   // Errors: blocked, no camera, in use
   for (const [name, expectKey] of [['NotAllowedError', 'blocked'], ['NotFoundError', 'No camera was found'], ['NotReadableError', 'another app']]) {
@@ -1306,33 +1336,32 @@ try {
     await ev(`document.querySelector('#log [data-mirror-start]').click()`);
     await until(async () => (await mir()).state === 'error', 3000, `error ${name}`);
     const er = await mir();
-    check(er.status.includes(expectKey) && !er.startHidden && er.preHidden, `${name}: a clear message and the button is back`, er.status);
+    check(er.status.includes(expectKey) && !er.startHidden && !er.stage, `${name}: a clear message, no big view, and the button is back`, er.status);
   }
   await shot('30-mirror-error', 300);
-  // Light theme and a phone
+  // Light theme and a phone (portrait)
   await load('about:blank'); await load(BASE); await bootDone();
   await typeText('theme light'); await enter(); await sleep(900);
   await typeText('mirror'); await enter();
   await until(async () => !!(await mir()), 3000, 'mirror light');
-  await ev(`document.querySelector('#log [data-mirror-start]').click()`);
-  await until(async () => (await mir()).state === 'live', 8000, 'live light');
-  await sleep(600);
+  await goLive('live light');
+  await sleep(700);
   const light = await mir();
-  check(light.text.length > 200 && /^[ .:\-=+*#%@\n]+$/.test(light.text), 'the light theme works too (the letters are inverted for dark-on-light)');
+  check(light.text.length > 500 && /^[ .:\-=+*#%@\n]+$/.test(light.text), 'the light theme works too (the letters are inverted for dark-on-light)');
   await shot('30-mirror-light', 100);
-  await ev(`document.querySelector('#log [data-mirror-stop]').click()`);
+  await ev(`document.querySelector('dialog.mirror-stage .ms-close').click()`);
   await typeText('theme dark'); await enter(); await sleep(700);
   await viewport(390, 844, true);
   await load('about:blank'); await load(BASE); await bootDone();
   await typeText('mirror'); await enter();
   await until(async () => !!(await mir()), 3000, 'mirror phone');
-  await ev(`document.querySelector('#log [data-mirror-start]').click()`);
-  await until(async () => (await mir()).state === 'live', 8000, 'live phone');
-  await sleep(600);
-  const ph2 = await ev(`(() => { const p = document.querySelector('#log .mirror-ascii'); const r = p.getBoundingClientRect(); const lines = p.textContent.split('\\n'); const btn = [...document.querySelectorAll('#log .mirror-btn')].filter((b) => !b.hidden).map((b) => Math.round(b.getBoundingClientRect().height)); return { w: Math.round(r.width), cols: Math.max(...lines.map((l) => l.length)), doc: document.documentElement.scrollWidth - innerWidth, btn, inside: r.right <= innerWidth }; })()`);
-  check(ph2.doc <= 0 && ph2.inside && ph2.cols >= 36 && ph2.cols <= 60 && ph2.btn.every((h) => h >= 44), 'on a phone it fits, uses fewer characters, and its buttons are touch-sized', JSON.stringify(ph2));
+  await goLive('live phone');
+  await sleep(800);
+  const gp = await stageGeo();
+  const btnH = await ev(`[...document.querySelectorAll('dialog.mirror-stage .ms-btn')].filter((b) => !b.hidden).map((b) => Math.round(b.getBoundingClientRect().height))`);
+  check(gp.dlg[0] >= 370 && gp.inside && gp.doc <= 0 && Math.abs(gp.preRatio - gp.videoRatio) / gp.videoRatio < 0.015 && gp.pre[0] <= 390 && btnH.every((h) => h >= 44), 'on a phone the big view fits, keeps its shape, and its buttons are touch-sized', JSON.stringify({ ...gp, btnH }));
   await shot('30-mirror-phone', 100);
-  await ev(`document.querySelector('#log [data-mirror-stop]').click()`);
+  await ev(`document.querySelector('dialog.mirror-stage .ms-close').click()`);
   await viewport(1440, 900);
 
   console.log('contact sheets');

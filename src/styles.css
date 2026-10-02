@@ -596,6 +596,20 @@ html[data-hud] .crumbs[hidden] { display: flex !important; visibility: hidden; }
 .mirror-hint { margin: 2px 0 0; font-size: 12px; }
 .mirror[data-state="ready"] .mirror-hint, .mirror[data-state="error"] .mirror-hint, .mirror[data-state="off"] .mirror-hint { display: none; }
 .mirror-video { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+
+/* The big view: nearly the whole window; the letters are sized in JS to the largest picture of the camera's own shape that fits. */
+.mirror-stage { inset: 0; width: min(98vw, 2400px); height: min(96vh, 1600px); height: min(96dvh, 1600px); max-width: none; max-height: none; padding: 0; overflow: hidden; color: var(--fg); background: var(--panel); border: 1px solid var(--accent); border-radius: 10px; box-shadow: 0 30px 90px rgba(0, 0, 0, 0.7); }
+.mirror-stage[open] { display: flex; flex-direction: column; }
+.mirror-stage::backdrop { background: rgba(0, 0, 0, 0.86); }
+.ms-bar { display: flex; flex: none; align-items: center; gap: 8px; padding: 6px 10px; background: var(--bar); border-bottom: 1px solid var(--line); }
+.ms-title { font-weight: 700; color: var(--accent); }
+.ms-status { flex: 1; min-width: 0; overflow: hidden; font-size: 12px; color: var(--dim); text-overflow: ellipsis; white-space: nowrap; }
+.ms-status:not(:empty)::before { content: "● "; color: var(--err); }
+.ms-btn { min-width: 44px; min-height: 44px; padding: 0 12px; font: inherit; color: var(--fg); background: transparent; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; transition: border-color 0.15s, color 0.15s; }
+.ms-btn:hover, .ms-btn:focus-visible { color: var(--accent); border-color: var(--accent); }
+.ms-view { display: grid; flex: 1; min-height: 0; place-items: center; padding: 8px; overflow: hidden; background: var(--bg); }
+.ms-ascii { width: auto; max-width: none; border: 0; border-radius: 0; background: transparent; }
+@media print { .mirror-stage { display: none; } }
 @media print { .mirror { display: none; } }
 
 /* ---- viewer window (src/lightbox.js) -------------------------------------------------------- */

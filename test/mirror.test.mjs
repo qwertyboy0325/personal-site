@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile, readdir } from 'node:fs/promises';
-import { mirrorColumns, mirrorRows, frameLetters, errorKey, mirrorFps, frameInterval, smooth, SAMPLES_PER_CHAR } from '../src/fx/mirror.js';
+import { mirrorColumns, mirrorRows, frameLetters, errorKey, mirrorFps, frameInterval, smooth, SAMPLES_PER_CHAR, fitBox, COOLDOWN_MS, SLOW_START_MS } from '../src/fx/mirror.js';
 import { execute, PUBLIC_COMMANDS, complete } from '../src/engine.js';
 import { renderEntry } from '../src/render.js';
 import { ui, LANGS } from '../src/content.js';
@@ -150,4 +150,88 @@ test('the frame loop does not touch the page more than it must (no layout reads 
   assert.match(frame, /if \(text !== shown\)/, 'identical text is not written again');
   assert.match(frame, /if \(key !== metrics\)/, 'font size and line height only when the size changed');
   assert.match(src, /new ResizeObserver/);
+});
+
+test('fitBox: the biggest picture of the camera\'s shape that fits the view, never stretched or cropped', () => {
+  // A wide window and a 4:3 camera: the height is the limit.
+  assert.deepEqual(fitBox(1400, 600, 0.75), { w: 800, h: 600 });
+  // A tall window: the width is the limit.
+  assert.deepEqual(fitBox(500, 900, 0.75), { w: 500, h: 375 });
+  // 16:9 camera
+  assert.deepEqual(fitBox(1600, 700, 9 / 16), { w: 1244, h: 700 });
+  // A phone held upright: the camera is portrait (taller than wide)
+  assert.deepEqual(fitBox(380, 640, 4 / 3), { w: 380, h: 507 });
+  assert.deepEqual(fitBox(380, 500, 4 / 3), { w: 375, h: 500 });
+  // Only the width is limited (the page's own box)
+  assert.deepEqual(fitBox(600, Infinity, 0.5), { w: 600, h: 300 });
+  assert.deepEqual(fitBox(600, 0, 0.5), { w: 600, h: 300 });
+  // Odd input never gives NaN or zero
+  for (const [w, h, r] of [[0, 0, 0], [NaN, NaN, NaN], [-5, -5, -1], [1, 1, 1000], ['x', 'y', 'z'], [undefined, undefined, undefined]]) {
+    const b = fitBox(w, h, r);
+    assert.ok(Number.isInteger(b.w) && Number.isInteger(b.h) && b.w >= 1 && b.h >= 1, JSON.stringify([w, h, r, b]));
+  }
+  // The shape is kept (to within a pixel) and the result always fits, for many window and camera shapes.
+  for (let vw = 200; vw <= 2400; vw += 173) {
+    for (let vh = 150; vh <= 1400; vh += 131) {
+      for (const ratio of [0.5625, 0.75, 1, 1.3333]) {
+        const b = fitBox(vw, vh, ratio);
+        assert.ok(b.w <= vw && b.h <= vh + 1, `${vw}x${vh} @${ratio} -> ${b.w}x${b.h} fits`);
+        assert.ok(Math.abs(b.h / b.w - ratio) < 1.5 / b.w + 1e-9, `${vw}x${vh} @${ratio} -> ${b.w}x${b.h} keeps its shape`);
+        assert.ok(b.w === Math.floor(vw) || Math.abs(b.h - vh) <= 1, 'and is as large as it can be');
+      }
+    }
+  }
+});
+
+test('mirrorColumns: the big view may use more characters, still bounded', () => {
+  assert.equal(mirrorColumns(1400, { max: 140 }), 140);
+  assert.equal(mirrorColumns(700, { max: 140 }), 100);
+  assert.equal(mirrorColumns(1400), 100, 'the page\'s own box keeps its limit');
+  assert.equal(mirrorColumns(10, { max: 140 }), 36);
+  assert.equal(mirrorColumns(NaN, { max: 140, min: 20 }), 20);
+});
+
+test('the big view: a modal dialog that fills nearly the window and turns the camera off when it is left', async () => {
+  const css = await read('src/styles.css');
+  assert.match(css, /\.mirror-stage \{[^}]*width: min\(98vw, 2400px\)[^}]*height: min\(96dvh, 1600px\)/);
+  assert.match(css, /\.mirror-stage\[open\] \{ display: flex; flex-direction: column; \}/);
+  assert.match(css, /\.ms-btn \{[^}]*min-width: 44px; min-height: 44px/, 'touch-sized buttons');
+  const src = await read('src/fx/mirror.js');
+  assert.match(src, /dlg\.showModal\(\)/);
+  assert.match(src, /dlg\.addEventListener\('close', \(\) => \{ if \(live\) stop\(\); \}\)/, 'Esc or the close button turns the camera off');
+  assert.match(src, /fitBox\(viewW, viewH, ratio\)/, 'sized to the view in the camera\'s own shape');
+  for (const lang of LANGS) for (const k of ['copyShort', 'fullscreen', 'closeStage']) assert.ok(ui[lang].mirror[k]?.length >= 2, `${lang}.mirror.${k}`);
+});
+
+test('frameLetters: the text has exactly as many lines as the box has rows (the picture is not squashed)', () => {
+  for (const [cols, vw, vh] of [[100, 640, 480], [140, 1280, 720], [60, 480, 640], [36, 640, 360]]) {
+    const rows = mirrorRows(cols, vw, vh);
+    const w = cols * SAMPLES_PER_CHAR;
+    const h = rows * SAMPLES_PER_CHAR; // what the mirror draws: the camera squeezed to the character grid
+    const data = new Uint8ClampedArray(w * h * 4);
+    for (let i = 0; i < w * h; i++) data.set([(i * 5) & 255, (i * 3) & 255, (i * 7) & 255, 255], i * 4);
+    const lines = frameLetters({ data, width: w, height: h }, { cols }).split('\n');
+    assert.equal(lines.length, rows, `${cols} columns over a ${vw}x${vh} camera: ${rows} rows`);
+    assert.ok(lines.every((l) => l.length <= cols));
+  }
+});
+
+test('a camera that was only just switched off is tried again before giving up (but only for "in use")', async () => {
+  const src = await read('src/fx/mirror.js');
+  assert.match(src, /async function openCamera\(retries = 2, delayMs = 350\)/);
+  assert.match(src, /errorKey\(e\) !== 'busy'/, 'a blocked or missing camera is reported at once');
+  assert.equal((src.match(/getUserMedia\(/g) ?? []).length, 1, 'still exactly one place asks for the camera');
+});
+
+test('starting is safe to interrupt and to repeat: a short cool-down after switching off, a camera that arrives late is switched straight off, and a slow start explains itself', async () => {
+  assert.ok(COOLDOWN_MS >= 300 && COOLDOWN_MS <= 1500);
+  assert.ok(SLOW_START_MS >= 5000 && SLOW_START_MS <= 15000);
+  const src = await read('src/fx/mirror.js');
+  assert.match(src, /releasedAt \+ COOLDOWN_MS - Date\.now\(\)/);
+  assert.match(src, /if \(startToken !== token \|\| !fig\.isConnected\) \{ got\.getTracks\(\)\.forEach\(\(track\) => track\.stop\(\)\); return; \}/, 'a camera that arrives after Stop or a page change is released at once');
+  assert.match(src, /startToken = null;/, 'release cancels a start in progress');
+  assert.match(src, /stopBtn\.hidden = state !== 'live' && state !== 'starting'/, 'Stop can cancel a start that is taking long');
+  assert.match(src, /status\.textContent = t\.slowStart/);
+  assert.ok(!/await video\.play\(\)/.test(src), 'never wait on video.play()');
+  for (const lang of LANGS) assert.ok(ui[lang].mirror.slowStart.length > 20, `${lang}.slowStart`);
 });
