@@ -718,6 +718,32 @@ try {
   await viewport(1440, 900);
   await load('about:blank'); await load(BASE); await bootDone();
 
+  console.log('status line: version and privacy claims');
+  const statusInfo = () => ev(`(() => { const s = document.getElementById('status'); const r = s.getBoundingClientRect(); const w = document.getElementById('window').getBoundingClientRect(); const c = document.getElementById('chips').getBoundingClientRect(); return { ver: s.querySelector('.status-ver').textContent, claims: s.querySelector('.status-claims').textContent, label: s.getAttribute('aria-label'), inside: r.left >= w.left - 1 && r.right <= w.right + 1 && r.bottom <= w.bottom + 1, belowChips: r.top >= c.bottom - 1, h: Math.round(r.height), doc: document.documentElement.scrollWidth, vw: innerWidth, vh: document.documentElement.scrollHeight, ih: innerHeight, size: parseFloat(getComputedStyle(s).fontSize), color: getComputedStyle(s).color }; })()`);
+  const st = await statusInfo();
+  check(st.ver === 'v1.0.0' && st.claims === '0 cookies · 0 trackers · 0 dependencies' && st.label === 'Site details', 'the status line shows the version and the three claims', JSON.stringify(st));
+  check(st.inside && st.belowChips && st.h < 50, 'it sits at the bottom of the terminal window, under the quick commands', JSON.stringify(st));
+  check(st.vh <= st.ih + 1 && st.doc <= st.vw, 'it does not make the page scroll');
+  await shot('25-status-line', 300);
+  await typeText('lang zh'); await enter(); await sleep(900);
+  const stZh = await statusInfo();
+  check(stZh.claims === '0 個 cookie · 0 個追蹤器 · 0 個依賴套件' && stZh.label === '網站資訊' && stZh.ver === 'v1.0.0', 'it follows the language', JSON.stringify(stZh));
+  await typeText('lang en'); await enter(); await sleep(900);
+  for (const theme of ['light', 'amber', 'matrix', 'dark']) {
+    await typeText(`theme ${theme}`); await enter(); await sleep(700);
+    const ratios = await ev(`(() => { const lum = (c) => { const m = c.match(/[\\d.]+/g).map(Number).slice(0, 3).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * m[0] + 0.7152 * m[1] + 0.0722 * m[2]; }; const s = document.getElementById('status'); const bg = getComputedStyle(s).backgroundColor; const out = {}; for (const sel of ['', '.status-ver']) { const fg = getComputedStyle(sel ? s.querySelector(sel) : s).color; const a = lum(fg), b = lum(bg); out[sel || 'text'] = ((Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)); } return out; })()`);
+    check(ratios.text >= 4.5 && ratios['.status-ver'] >= 4.5, `status line text has AA contrast in the ${theme} theme`, JSON.stringify(ratios));
+  }
+  await viewport(320, 640, true);
+  await load('about:blank'); await load(BASE); await bootDone();
+  await ev(`document.querySelector('.tab[data-view="term"]')?.click()`);
+  await sleep(400);
+  const stPhone = await statusInfo();
+  check(stPhone.inside && stPhone.doc <= stPhone.vw && stPhone.vh <= stPhone.ih + 1, 'at 320px wide it wraps, stays inside the window and does not scroll the page', JSON.stringify(stPhone));
+  await shot('25-status-line-320', 300);
+  await viewport(1440, 900);
+  await load('about:blank'); await load(BASE); await bootDone();
+
   console.log('pictures in the overview');
   await ev(`document.querySelector('#gui .ggallery').scrollIntoView()`);
   await until(() => ev(`[...document.querySelectorAll('#gui .gthumb img')].every((i) => i.complete && i.naturalWidth > 0)`), 15000, 'thumbnails loaded');

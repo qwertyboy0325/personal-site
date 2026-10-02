@@ -479,6 +479,11 @@ html.rt-on input { cursor: text; }
 .boot-fail p { margin: 4px 0 10px; }
 .boot-fail pre { margin: 6px 0 0; padding: 8px; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 12px; color: var(--dim); background: var(--bg); border-radius: 3px; user-select: all; }
 
+/* ---- status line: version and the privacy claims (each claim is checked by test/status.test.mjs) ---- */
+.status { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 14px; flex: none; padding: 6px 16px 8px; font-size: 11px; line-height: 1.4; letter-spacing: 0.04em; color: var(--dim); background: var(--bar); border-top: 1px solid var(--line); }
+.status-ver { color: var(--accent); }
+.status-ver::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 7px; border-radius: 50%; background: var(--accent); vertical-align: 1px; }
+
 /* ---- overview cards: hacker-HUD styling ------------------------------------------ */
 .gcard { position: relative; padding: 12px 14px; border: 1px solid var(--line); border-radius: 6px; background: color-mix(in srgb, var(--panel) 90%, transparent); }
 .gcard::before, .gcard::after { content: ""; position: absolute; width: 9px; height: 9px; border: 2px solid var(--accent); pointer-events: none; transition: border-color 0.15s; }

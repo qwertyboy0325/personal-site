@@ -265,6 +265,8 @@ function applyLang(lang, persist) {
   const t = ui[lang];
   document.documentElement.lang = lang === 'zh' ? 'zh-Hant' : 'en';
   document.title = t.documentTitle;
+  $('status').setAttribute('aria-label', t.status.label);
+  $('status').querySelector('.status-claims').textContent = t.status.claims;
   input.setAttribute('aria-label', t.inputLabel);
   chips.setAttribute('aria-label', t.chipsLabel);
   $('btn-theme').setAttribute('aria-label', t.themeButton);
