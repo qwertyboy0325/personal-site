@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile, readdir } from 'node:fs/promises';
-import { mirrorColumns, mirrorRows, frameLetters, errorKey, mirrorFps, frameInterval, smooth, SAMPLES_PER_CHAR, fitBox, COOLDOWN_MS, SLOW_START_MS } from '../src/fx/mirror.js';
+import { mirrorColumns, mirrorRows, frameLetters, errorKey, mirrorFps, frameInterval, smooth, SAMPLES_PER_CHAR, fitBox, COOLDOWN_MS, SLOW_START_MS, DENSITY, adaptQuality } from '../src/fx/mirror.js';
 import { execute, PUBLIC_COMMANDS, complete } from '../src/engine.js';
 import { renderEntry } from '../src/render.js';
 import { ui, LANGS } from '../src/content.js';
@@ -234,4 +234,49 @@ test('starting is safe to interrupt and to repeat: a short cool-down after switc
   assert.match(src, /status\.textContent = t\.slowStart/);
   assert.ok(!/await video\.play\(\)/.test(src), 'never wait on video.play()');
   for (const lang of LANGS) assert.ok(ui[lang].mirror.slowStart.length > 20, `${lang}.slowStart`);
+});
+
+test('DENSITY: full screen has the room for finer letters than the big view, and the big view is at least as fine as the page box', () => {
+  assert.ok(DENSITY.full.cell < DENSITY.stage.cell && DENSITY.stage.cell <= DENSITY.inline.cell);
+  assert.ok(DENSITY.full.max > DENSITY.stage.max && DENSITY.stage.max > DENSITY.inline.max);
+  // On a 2300 px wide picture (a 1440p screen): the size of one character, and the amount of text per frame.
+  const cols = mirrorColumns(2300, DENSITY.full);
+  assert.equal(cols, 420);
+  assert.ok(2300 / cols >= 5 && 2300 / cols <= 6, 'about 5 to 6 px per character: fine, but clearly letters');
+  assert.ok(cols * mirrorRows(cols, 1280, 720) < 60000, 'bounded amount of text per frame');
+  assert.equal(mirrorColumns(1409, DENSITY.stage), 200, 'the windowed big view');
+  assert.equal(mirrorColumns(700, DENSITY.inline), 100);
+});
+
+test('adaptQuality: finer when there is room, coarser when frames are costly or late, always between 0.4 and 1', () => {
+  const target = 1000 / 15;
+  assert.equal(adaptQuality(1, 3, 70, target), 1, 'cheap frames at full quality: stay');
+  assert.ok(adaptQuality(1, 40, 80, target) < 1, 'a frame that takes 40 ms of 66: lower the detail');
+  assert.ok(adaptQuality(1, 5, 140, target) < 1, 'frames arriving late: lower the detail');
+  assert.ok(adaptQuality(0.5, 4, 70, target) > 0.5, 'room to spare: creep back up');
+  assert.equal(adaptQuality(0.5, 12, 75, target), 0.5, 'in between: leave it');
+  assert.equal(adaptQuality(0.4, 100, 300, target), 0.4, 'never below 0.4');
+  assert.equal(adaptQuality(1, 1, 60, target), 1, 'never above 1');
+  assert.equal(adaptQuality(0.99, 1, 60, target), 1, 'and it stops at 1');
+  for (const bad of [NaN, undefined, null, 'x', -3, 9]) { const v = adaptQuality(bad, 10, 70, target); assert.ok(v >= 0.4 && v <= 1, String(bad)); }
+  assert.equal(adaptQuality(0.8, NaN, NaN, target), 0.8);
+  assert.equal(adaptQuality(0.8, 10, 70, 0), 0.8);
+  // A slow device converges: repeatedly applying it with costs that fall as the detail falls settles below 1.
+  let q = 1;
+  for (let i = 0; i < 40; i++) q = adaptQuality(q, 50 * q * q, 70 + 100 * (1 - q), target);
+  assert.ok(q < 0.85 && q >= 0.4, `settled at ${q.toFixed(2)}`);
+  // A fast device stays at full detail.
+  q = 1;
+  for (let i = 0; i < 40; i++) q = adaptQuality(q, 4 * q, 70, target);
+  assert.equal(q, 1);
+});
+
+test('the mirror follows the browser into real full screen and works out the density again', async () => {
+  const src = await read('src/fx/mirror.js');
+  assert.match(src, /document\.addEventListener\('fullscreenchange', onFullscreenChange\)/);
+  assert.match(src, /document\.addEventListener\('webkitfullscreenchange', onFullscreenChange\)/, 'Safari');
+  assert.match(src, /full = Boolean\(stage && el === stage\.dlg\)/);
+  assert.match(src, /const tier = stage \? \(full \? DENSITY\.full : DENSITY\.stage\) : DENSITY\.inline;/);
+  assert.match(src, /quality = adaptQuality\(quality, avgCost, avgGap, 1000 \/ mirrorFps\(reduceMotion\)\)/);
+  assert.match(src, /removeEventListener\('fullscreenchange', onFullscreenChange\)/, 'and lets go of it again');
 });

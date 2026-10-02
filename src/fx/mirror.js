@@ -16,6 +16,26 @@ export function mirrorColumns(widthPx, { cell = 7, min = 36, max = 100 } = {}) {
   return Math.min(max, Math.max(min, Math.round(w / cell)));
 }
 
+/** How dense the letters are: pixels per character and the most characters per row. Real full screen has the room for more. */
+export const DENSITY = {
+  inline: { cell: 7, max: 100 },
+  stage: { cell: 7, max: 200 },
+  full: { cell: 5, max: 420 },
+};
+
+/**
+ * Trade resolution against speed. `q` (0.4 to 1) scales the number of characters; it drops when frames are costly or late
+ * and creeps back up when there is room to spare. avgCost = time spent on a frame, avgGap = time between frames, both in ms.
+ */
+export function adaptQuality(q, avgCost, avgGap, targetMs) {
+  const cur = Number.isFinite(q) ? Math.min(1, Math.max(0.4, q)) : 1;
+  if (!(avgCost > 0) || !(targetMs > 0)) return cur;
+  const late = Number.isFinite(avgGap) && avgGap > targetMs * 1.5;
+  if (avgCost > targetMs * 0.35 || late) return Math.max(0.4, cur * 0.85);
+  if (avgCost < targetMs * 0.15 && !(avgGap > targetMs * 1.2)) return Math.min(1, cur * 1.05);
+  return cur;
+}
+
 /**
  * The biggest picture of shape `ratio` (height / width) that fits a view `viewW` x `viewH`: nothing is stretched or cropped.
  * Pass viewH = Infinity (or 0) when only the width is limited.
@@ -134,6 +154,11 @@ export function createMirror(fig, { t, getInvert = () => false, reduceMotion = f
   let shown = '';        // the text on screen: an unchanged frame is not written again
   let metrics = '';      // the cols/rows/size the font was last set for
   let observer = null;
+  let quality = 1;       // 0.4 to 1: how much of the available resolution is used (see adaptQuality)
+  let lastProcessed = 0;
+  let avgGap = 0;
+  let sinceAdapt = 0;
+  let full = false;      // browser full screen
   let startToken = null; // identifies the start in progress, so a camera that arrives after Stop or a page change is switched straight off
   let slowTimer = 0;
   let stage = null;      // the big view (a <dialog>) while the camera is on
@@ -197,6 +222,13 @@ export function createMirror(fig, { t, getInvert = () => false, reduceMotion = f
     return true;
   }
 
+  function onFullscreenChange() {
+    const el = document.fullscreenElement ?? document.webkitFullscreenElement;
+    full = Boolean(stage && el === stage.dlg);
+    metrics = ''; // the density changes, so the font is worked out again
+    measure();
+  }
+
   function closeStage() {
     if (!stage) return;
     const { dlg } = stage;
@@ -226,6 +258,8 @@ export function createMirror(fig, { t, getInvert = () => false, reduceMotion = f
     document.removeEventListener('visibilitychange', onVisibility);
     removeEventListener('pagehide', onPageHide);
     removeEventListener('resize', measure);
+    document.removeEventListener('fullscreenchange', onFullscreenChange);
+    document.removeEventListener('webkitfullscreenchange', onFullscreenChange);
     closeStage();
     if (active === api) active = null;
   }
@@ -251,7 +285,8 @@ export function createMirror(fig, { t, getInvert = () => false, reduceMotion = f
     const t0 = performance.now();
     const ratio = video.videoHeight / video.videoWidth;
     const box = fitBox(viewW, viewH, ratio); // as large as the view allows, in the camera's own shape
-    const cols = mirrorColumns(box.w, stage ? { max: 140 } : {});
+    const tier = stage ? (full ? DENSITY.full : DENSITY.stage) : DENSITY.inline;
+    const cols = Math.max(36, Math.round(mirrorColumns(box.w, tier) * quality));
     const rows = mirrorRows(cols, video.videoWidth, video.videoHeight);
     const w = cols * SAMPLES_PER_CHAR;
     const h = rows * SAMPLES_PER_CHAR;
@@ -282,8 +317,14 @@ export function createMirror(fig, { t, getInvert = () => false, reduceMotion = f
     }
     const t3 = performance.now();
     avgCost = smooth(avgCost, t3 - t0);
+    if (lastProcessed) avgGap = smooth(avgGap, now - lastProcessed);
+    lastProcessed = now;
+    if (++sinceAdapt >= 10) { // every so often: is the picture too detailed for this device, or could it be finer?
+      sinceAdapt = 0;
+      quality = adaptQuality(quality, avgCost, avgGap, 1000 / mirrorFps(reduceMotion));
+    }
     perf.read += t1 - t0; perf.text += t2 - t1; perf.dom += t3 - t2; perf.n++;
-    if (perf.n === 30) { fig.dataset.perf = JSON.stringify({ read: +(perf.read / 30).toFixed(2), text: +(perf.text / 30).toFixed(2), dom: +(perf.dom / 30).toFixed(2), interval: Math.round(frameInterval(avgCost, mirrorFps(reduceMotion))), cols, rows }); perf.read = perf.text = perf.dom = perf.n = 0; }
+    if (perf.n === 30) { fig.dataset.perf = JSON.stringify({ read: +(perf.read / 30).toFixed(2), text: +(perf.text / 30).toFixed(2), dom: +(perf.dom / 30).toFixed(2), interval: Math.round(frameInterval(avgCost, mirrorFps(reduceMotion))), cols, rows, q: +quality.toFixed(2), gap: Math.round(avgGap), full }); perf.read = perf.text = perf.dom = perf.n = 0; }
   }
 
   async function begin() {
@@ -314,6 +355,11 @@ export function createMirror(fig, { t, getInvert = () => false, reduceMotion = f
       shown = '';
       metrics = '';
       avgCost = 0;
+      avgGap = 0;
+      lastProcessed = 0;
+      sinceAdapt = 0;
+      quality = 1;
+      full = false;
       openStage(); // the big view (falls back to the page's own box if the browser cannot show a <dialog>)
       out.dataset.cw = '';
       setState('live', t.live);
@@ -321,6 +367,8 @@ export function createMirror(fig, { t, getInvert = () => false, reduceMotion = f
       observer = typeof ResizeObserver === 'function' ? new ResizeObserver(measure) : null;
       observer?.observe(stage ? stage.view : out.parentElement ?? fig);
       addEventListener('resize', measure);
+      document.addEventListener('fullscreenchange', onFullscreenChange);
+      document.addEventListener('webkitfullscreenchange', onFullscreenChange);
       document.addEventListener('visibilitychange', onVisibility);
       addEventListener('pagehide', onPageHide);
       stream.getVideoTracks()[0]?.addEventListener('ended', () => { if (live) stop(t.lost); });

@@ -1264,7 +1264,7 @@ try {
   check(geo1.inside && (geo1.pre[0] >= geo1.view[0] - 20 || geo1.pre[1] >= geo1.view[1] - 20), 'and it is as large as the window allows, without being cut off', JSON.stringify({ pre: geo1.pre, view: geo1.view }));
   check(Math.abs(geo1.textW - geo1.pre[0]) / geo1.pre[0] < 0.015 && geo1.align === 'left' && geo1.mono && geo1.doc <= 0, 'the letters span the picture exactly, in the terminal font, without scrolling the page', JSON.stringify({ textW: geo1.textW, pre: geo1.pre }));
   check(Math.abs(geo1.linesH - geo1.preH) / geo1.preH < 0.02, 'the lines of letters fill the picture\'s height exactly (the face is not squashed to half height)', JSON.stringify({ lines: geo1.rows, lineH: geo1.linesH, boxH: geo1.preH }));
-  check(geo1.cols >= 100 && geo1.cols <= 140, 'there is room for more characters than the small box (100 to 140)', String(geo1.cols));
+  check(geo1.cols >= 150 && geo1.cols <= 200, 'the big view has room for more characters than the small box (100): about 7 px each', String(geo1.cols));
   const camLines1 = cam1.text.split('\n');
   check(camLines1.length >= 30 && /^[ .:\-=+*#%@\n]+$/.test(cam1.text), 'the frame is made of the usual characters', `${camLines1.length} lines`);
   await until(() => ev(`!!document.querySelector('#log .mirror').dataset.perf`), 8000, 'frame timing available');
@@ -1283,6 +1283,30 @@ try {
   }
   await viewport(1440, 900);
   await sleep(500);
+  // Real full screen has room for finer letters. (The browser's full-screen state is simulated: headless Chrome cannot really switch.)
+  const dens = () => ev(`JSON.parse(document.querySelector('#log .mirror').dataset.perf ?? 'null')`);
+  await viewport(2560, 1440);
+  await sleep(800);
+  const windowed = await stageGeo();
+  await ev(`Object.defineProperty(document, 'fullscreenElement', { get: () => document.querySelector('dialog.mirror-stage'), configurable: true }); document.dispatchEvent(new Event('fullscreenchange'))`);
+  await sleep(1500);
+  const fs1 = await stageGeo();
+  check(fs1.cols > windowed.cols * 1.5 && fs1.cols >= 300 && fs1.cols <= 420 && fs1.pre[0] / fs1.cols >= 4.5 && fs1.pre[0] / fs1.cols <= 8, 'in full screen the letters are finer (about 5 to 7 px each, at most 420 across)', JSON.stringify({ windowed: windowed.cols, full: fs1.cols, px: fs1.pre[0] / fs1.cols }));
+  check(Math.abs(fs1.preRatio - fs1.videoRatio) / fs1.videoRatio < 0.01 && Math.abs(fs1.linesH - fs1.preH) / fs1.preH < 0.02 && Math.abs(fs1.textW - fs1.pre[0]) / fs1.pre[0] < 0.015, 'and the shape, the height and the width still match exactly', JSON.stringify({ ratio: [fs1.preRatio, fs1.videoRatio] }));
+  await until(async () => !!(await dens()), 8000, 'timing in full screen');
+  const d1 = await dens();
+  check(d1.full === true && d1.read + d1.text + d1.dom < 40 && d1.q >= 0.9, 'a normal computer keeps the full detail, with a frame costing only a few milliseconds', JSON.stringify(d1));
+  // Weigh resolution against speed: on a much slower processor the detail is lowered until it keeps up.
+  await send('Emulation.setCPUThrottlingRate', { rate: 6 });
+  await sleep(11000);
+  const d2 = await dens();
+  const slow = await stageGeo();
+  await send('Emulation.setCPUThrottlingRate', { rate: 1 });
+  check(d2.q < 0.9 && slow.cols < fs1.cols && slow.cols >= 100, 'on a 6x slower processor the detail is lowered (but stays fine) so the picture keeps moving', JSON.stringify({ q: d2.q, cols: [fs1.cols, slow.cols], gap: d2.gap }));
+  check(d2.gap < 160, 'and frames keep arriving (less than 160 ms apart even at that speed)', JSON.stringify(d2));
+  await ev(`delete document.fullscreenElement; document.dispatchEvent(new Event('fullscreenchange'))`);
+  await viewport(1440, 900);
+  await sleep(800);
   // Copy one frame as text
   await ev(`document.querySelector('dialog.mirror-stage .ms-copy').click()`);
   await until(() => ev(`document.getElementById('toast').classList.contains('show')`), 3000, 'toast');
