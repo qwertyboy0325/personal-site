@@ -9,6 +9,7 @@
 
 import { esc, isEmail } from './render.js';
 import { profile, projects, works, gallery, skillGroups, banner, ui } from './content.js';
+import { isPhoto } from './photos.js';
 
 const KIND_CLASS = { visual: 'k-visual', thinking: 'k-think', design: 'k-design' };
 
@@ -33,8 +34,10 @@ export function guiHtml(lang) {
     )
     .join('');
 
-  const galleryCards = gallery
-    .map((it, i) =>
+  const thumbCards = (isMine) => gallery
+    .map((it, i) => [it, i])
+    .filter(([it]) => isPhoto(it) === isMine)
+    .map(([it, i]) =>
       card(
         `view ${i + 1}`,
         `<span class="gthumb-wrap"><img src="${esc(it.thumb)}" width="${esc(it.thumbWidth)}" height="${esc(it.thumbHeight)}" alt="" loading="lazy" decoding="async">${it.kind === 'video' ? '<span class="shot-play" aria-hidden="true">▶</span>' : ''}</span><span class="gtitle">${esc(it[lang].title)}</span>`,
@@ -42,6 +45,8 @@ export function guiHtml(lang) {
       ),
     )
     .join('');
+  const galleryCards = thumbCards(false);
+  const photoCards = thumbCards(true);
 
   const skills = skillGroups
     .map((group) => {
@@ -68,6 +73,7 @@ export function guiHtml(lang) {
     <section class="gsec" aria-labelledby="g-projects"><h3 id="g-projects">// ${esc(g.sections.projects)}</h3><div class="ggrid">${projectCards}</div></section>
     <section class="gsec" aria-labelledby="g-works"><h3 id="g-works">// ${esc(g.sections.works)}</h3><div class="ggrid">${workCards}</div></section>
     <section class="gsec" aria-labelledby="g-gallery"><h3 id="g-gallery">// ${esc(g.sections.gallery)}</h3><div class="ggrid ggallery">${galleryCards}</div></section>
+    ${photoCards ? `<section class="gsec" aria-labelledby="g-photos"><h3 id="g-photos">// ${esc(g.sections.photos)}</h3><div class="ggrid ggallery gphotos">${photoCards}</div></section>` : ''}
     <section class="gsec" aria-labelledby="g-skills"><h3 id="g-skills">// ${esc(g.sections.skills)}</h3><div class="gskills">${skills}</div></section>
     <section class="gsec" aria-labelledby="g-contact"><h3 id="g-contact">// ${esc(g.sections.contact)}</h3><div class="gcontact">${contact.join('')}</div></section>`;
 }

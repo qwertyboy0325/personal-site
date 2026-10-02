@@ -4,7 +4,7 @@
 //
 //   npm run e2e
 
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { cp, mkdir, mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -657,14 +657,17 @@ try {
   await until(() => ev(`!!document.querySelector('dialog.viewer[open]')`), 3000, 'narrow viewer opens');
   check((await wins()) === 0, 'below 1000px pictures open in the modal dialog, not in a floating window');
   const vw = await ev(`(() => { const d = document.querySelector('dialog.viewer'); return { title: d.querySelector('.vtitle').textContent, count: d.querySelector('.vcount').textContent, img: d.querySelector('.vstage img')?.getAttribute('src'), labelledby: d.getAttribute('aria-labelledby'), titleId: d.querySelector('.vtitle').id, modal: d.matches(':modal'), alt: d.querySelector('.vstage img')?.alt.length }; })()`);
-  check(vw.title === 'A black hole, prepared for viewing' && vw.count === '1 / 4' && vw.img.endsWith('black-hole-presentation.jpg') && vw.alt > 20, 'the dialog shows the title, counter, image and alt text', JSON.stringify(vw));
+  check(vw.title === 'A black hole, prepared for viewing' && vw.count === '1 / 16' && vw.img.endsWith('black-hole-presentation.jpg') && vw.alt > 20, 'the dialog shows the title, counter, image and alt text', JSON.stringify(vw));
   check(vw.labelledby === vw.titleId && vw.modal, 'and it is a labelled modal dialog');
   await key('ArrowRight', 'ArrowRight', 39);
-  await until(() => ev(`document.querySelector('dialog.viewer .vcount').textContent === '2 / 4'`), 2000, 'next');
+  await until(() => ev(`document.querySelector('dialog.viewer .vcount').textContent === '2 / 16'`), 2000, 'next');
   await key('ArrowLeft', 'ArrowLeft', 37);
   await key('ArrowLeft', 'ArrowLeft', 37);
-  await until(() => ev(`document.querySelector('dialog.viewer .vcount').textContent === '4 / 4'`), 2000, 'wrap');
-  check(!!(await ev(`document.querySelector('dialog.viewer .vstage video')`)), '← from the first wraps around to the video');
+  await until(() => ev(`document.querySelector('dialog.viewer .vcount').textContent === '16 / 16'`), 2000, 'wrap');
+  check(!!(await ev(`document.querySelector('dialog.viewer .vstage img')`)) && !(await ev(`document.querySelector('dialog.viewer .vstage video')`)), '← from the first wraps around to the last picture');
+  for (let i = 0; i < 4; i++) await key('ArrowRight', 'ArrowRight', 39);
+  await until(() => ev(`document.querySelector('dialog.viewer .vcount').textContent === '4 / 16'`), 2000, 'to the video');
+  check(!!(await ev(`document.querySelector('dialog.viewer .vstage video')`)), '→ from the last wraps to the first, and the fourth item is the video');
   await until(() => ev(`document.querySelector('dialog.viewer video').readyState >= 1`), 30000, 'video metadata');
   check((await ev(`document.querySelector('dialog.viewer video').duration`)) > 20, 'the video loads (the dev server answers Range requests, which Safari requires)');
   await key('Escape', 'Escape', 27);
@@ -831,8 +834,8 @@ try {
 
   console.log('pictures in the overview');
   await ev(`document.querySelector('#gui .ggallery').scrollIntoView()`);
-  await until(() => ev(`[...document.querySelectorAll('#gui .gthumb img')].every((i) => i.complete && i.naturalWidth > 0)`), 15000, 'thumbnails loaded');
-  const cards = await ev(`(() => [...document.querySelectorAll('#gui .gthumb')].map((c) => { const i = c.querySelector('img'); return { loaded: i.complete && i.naturalWidth > 0, alt: i.alt, w: i.getAttribute('width'), h: i.getAttribute('height'), play: !!c.querySelector('.shot-play'), title: c.querySelector('.gtitle').textContent.length }; }))()`);
+  await until(() => ev(`[...document.querySelectorAll('#gui .ggallery:not(.gphotos) .gthumb img')].every((i) => i.complete && i.naturalWidth > 0)`), 15000, 'thumbnails loaded');
+  const cards = await ev(`(() => [...document.querySelectorAll('#gui .ggallery:not(.gphotos) .gthumb')].map((c) => { const i = c.querySelector('img'); return { loaded: i.complete && i.naturalWidth > 0, alt: i.alt, w: i.getAttribute('width'), h: i.getAttribute('height'), play: !!c.querySelector('.shot-play'), title: c.querySelector('.gtitle').textContent.length }; }))()`);
   check(cards.length === 4 && cards.every((c) => c.loaded && c.w === '480' && c.h === '480' && c.title > 5), 'four thumbnail cards, loaded, with reserved dimensions', JSON.stringify(cards));
   check(cards.filter((c) => c.play).length === 1, 'only the video card has a play badge');
   await ev(`document.querySelector('#gui [data-cmd="view 2"]').click()`);
@@ -1121,6 +1124,170 @@ try {
     await load('about:blank').catch(() => {}); // leave first: killing a server under an open event stream logs a (harmless) network error
     lrServer?.kill();
     await rm(lrDir, { recursive: true, force: true }).catch(() => {});
+  }
+
+  console.log('photography (the real photographs)');
+  await viewport(1440, 900);
+  await load('about:blank'); await load(BASE); await bootDone();
+  await typeText('photos'); await enter();
+  await until(async () => (await logText()).includes('16. '), 3000, 'photos list');
+  const plist = await logText();
+  check(plist.includes('5. A backpack resting on the grass') && plist.includes('16. A figure on the lawn') && !plist.includes('1. A black hole'), 'photos lists the twelve photographs, numbered 5 to 16');
+  await ev(`document.querySelector('#g-photos').scrollIntoView()`);
+  await until(() => ev(`[...document.querySelectorAll('#gui .gphotos img')].every((i) => i.complete && i.naturalWidth > 0)`), 20000, 'real thumbnails');
+  const rp = await ev(`(() => ({ cards: document.querySelectorAll('#gui .gphotos [data-cmd]').length, bad: [...document.querySelectorAll('#gui .gphotos img')].filter((i) => i.getAttribute('width') !== String(i.naturalWidth) || i.getAttribute('height') !== String(i.naturalHeight)).length, doc: document.documentElement.scrollWidth, vw: innerWidth }))()`);
+  check(rp.cards === 12 && rp.bad === 0 && rp.doc <= rp.vw, 'the overview shows twelve photo cards with exact declared sizes', JSON.stringify(rp));
+  await shot('28-photos-overview', 300);
+  await typeText('view 6'); await enter();
+  await until(() => ev(`!!document.querySelector('#log figure.shot .exif')`), 3000, 'real photo figure');
+  check((await ev(`document.querySelector('#log figure.shot .exif').textContent`)) === 'NIKON Z 6 · NIKKOR Z 35mm f/1.8 S · 35 mm · f/1.8 · 1/3200 s · ISO 100', 'a real photo shows its camera, lens and settings');
+  await sleep(1600);
+  await ev(`document.querySelector('#log figure.shot .shot-open').click()`);
+  await until(() => ev(`!!document.querySelector('#windows .win .exif')`), 3000, 'real photo window');
+  await until(() => ev(`(() => { const i = document.querySelector('#windows .wstage img'); return i.complete && i.naturalWidth > 0; })()`), 10000, 'real photo loaded');
+  await shot('28-photo-real-window', 500);
+  await ev(`document.querySelector('#windows .win').focus()`);
+  await key('Escape', 'Escape', 27);
+  // The portrait photos
+  await typeText('view 12'); await enter();
+  await until(() => ev(`[...document.querySelectorAll('#log figure.shot')].length >= 2`), 3000, 'portrait figure');
+  await sleep(1600);
+  await ev(`[...document.querySelectorAll('#log .shot-open')].at(-1).click()`);
+  await until(() => ev(`!!document.querySelector('#windows .win .exif')`), 3000, 'portrait window');
+  await until(() => ev(`(() => { const i = document.querySelector('#windows .wstage img'); return i.complete && i.naturalWidth > 0; })()`), 10000, 'portrait loaded');
+  const portrait = await ev(`(() => { const w = document.querySelector('#windows .win'); const r = w.getBoundingClientRect(); return { meta: w.querySelector('.wmeta').textContent, inside: r.top >= 0 && r.bottom <= innerHeight, } })()`);
+  check(portrait.meta === '1065×1600 · JPG' && portrait.inside, 'a portrait photo opens upright and fits the window', JSON.stringify(portrait));
+  await ev(`document.querySelector('#windows .win').focus()`);
+  await key('Escape', 'Escape', 27);
+  await typeText('clear'); await enter();
+
+  console.log('photography (a copy of the site with two photographs)');
+  const haveImageTools = (() => { try { execFileSync('magick', ['-version'], { stdio: 'ignore' }); execFileSync('sips', ['--help'], { stdio: 'ignore' }); return true; } catch { return false; } })();
+  if (!haveImageTools) {
+    console.log('  skipped: needs ImageMagick and macOS sips');
+  } else {
+    const { makeFakePhoto } = await import('./fake-photo.mjs');
+    const { processPhoto } = await import('./add-photo.mjs');
+    const photoDir = await mkdtemp(join(tmpdir(), 'site-photos-'));
+    let photoServer;
+    try {
+      await cp(ROOT, photoDir, { recursive: true, filter: (src) => !/[\\/](\.git|node_modules|\.shots)([\\/]|$)/.test(src) });
+      const inDir = join(photoDir, '_in');
+      await mkdir(inDir, { recursive: true });
+      const expected = makeFakePhoto(join(inDir, 'IMG_1001.jpg'), { width: 2400, height: 1600 });
+      makeFakePhoto(join(inDir, 'IMG_1002.jpg'), { width: 2400, height: 1600, orientation: 6 });
+      const made = ['IMG_1001', 'IMG_1002'].map((n, i) => processPhoto(join(inDir, `${n}.jpg`), { outDir: join(photoDir, 'assets/gallery'), slug: `test-${i + 1}` }));
+      const entry = (r, i) => `  {
+    slug: '${r.slug}', kind: 'image', set: 'photo',
+    src: 'assets/gallery/${r.slug}.jpg', width: ${r.width}, height: ${r.height},
+    thumb: 'assets/gallery/${r.slug}-thumb.jpg', thumbWidth: ${r.thumbWidth}, thumbHeight: ${r.thumbHeight},
+    shot: ${JSON.stringify(r.shot).replace(/"([a-z]+)":/g, '$1: ').replace(/"/g, "'")},
+    en: { title: 'Test photo ${i + 1}', caption: 'A picture made only for the tests, number ${i + 1}. It shows a soft gradient.', alt: 'A smooth gradient from warm sand at the centre to deep blue at the edges, photo ${i + 1}.' },
+    zh: { title: '測試照片 ${i + 1}', caption: '只為測試製作的圖片，編號 ${i + 1}。畫面是柔和的漸層。', alt: '從中央的暖沙色漸層到邊緣的深藍色，照片 ${i + 1}。' },
+  },
+`;
+      const cfile = join(photoDir, 'src/content.js');
+      // The copy holds only the two test photos, not the real ones (so the numbers below are predictable).
+      const ctext = (await readFile(cfile, 'utf8')).replace(/\n  \{\n    slug: '[^']+',\n    kind: 'image',\n    set: 'photo',[\s\S]*?\n  \},/g, '');
+      const close = ctext.lastIndexOf('];', ctext.indexOf('export const skillGroups'));
+      await writeFile(cfile, ctext.slice(0, close) + made.map(entry).join('') + ctext.slice(close));
+      photoServer = spawn(process.execPath, [join(ROOT, 'scripts/serve.mjs'), '5192'], { stdio: 'ignore', env: { ...process.env, SITE_ROOT: photoDir, LIVERELOAD: '0' } });
+      await until(() => fetch('http://127.0.0.1:5192/').then((r) => r.ok), 8000, 'photo-site server');
+      const errorsBefore = consoleErrors.length;
+      await viewport(1440, 900);
+      await load('about:blank'); await load('http://127.0.0.1:5192/'); await bootDone();
+      await ev(`localStorage.clear()`);
+
+      // What the visitor downloads contains no private data.
+      const { privateSegments } = await import('./jpeg-meta.mjs');
+      for (const r of made) {
+        for (const f of [r.full, r.thumb]) {
+          const served = Buffer.from(await (await fetch(`http://127.0.0.1:5192/assets/gallery/${f.split('/').at(-1)}`)).arrayBuffer());
+          check(privateSegments(served).length === 0 && !['Jane Q. Owner', 'SN-123456', 'GPS', 'TESTCO'].some((x) => served.includes(x)), `${f.split('/').at(-1)} as served has no Exif, GPS, serial number or owner name`);
+        }
+      }
+      check(made[0].width === 1600 && made[0].height === 1067 && made[1].width === 1067 && made[1].height === 1600, 'the 2400x1600 photos became 1600 px, and the rotated one is upright');
+
+      // Commands
+      await typeText('help'); await enter();
+      await until(async () => (await logText()).includes('my photographs'), 3000, 'help lists photos');
+      check(true, 'help lists the photos command once there are photos');
+      await typeText('photos'); await enter();
+      await until(async () => (await logText()).includes('6. Test photo 2'), 3000, 'photos list');
+      const list = await logText();
+      check(list.includes('5. Test photo 1') && !list.includes('5. A black hole') && list.includes('view 5'), 'photos lists only the photos, numbered after the four project pictures');
+      await typeText('gallery'); await enter();
+      await until(async () => (await logText()).includes('from my projects'), 3000, 'gallery groups');
+      check((await logText()).includes('photographs'), 'gallery now has two labelled groups');
+
+      // Overview section
+      await ev(`document.querySelector('#g-photos').scrollIntoView()`);
+      await until(() => ev(`[...document.querySelectorAll('#gui .gphotos img')].every((i) => i.complete && i.naturalWidth > 0)`), 15000, 'photo thumbnails');
+      const ov = await ev(`(() => ({ heading: document.querySelector('#g-photos').textContent, cards: [...document.querySelectorAll('#gui .gphotos [data-cmd]')].map((c) => c.dataset.cmd), dims: [...document.querySelectorAll('#gui .gphotos img')].map((i) => [i.getAttribute('width'), i.getAttribute('height'), i.naturalWidth, i.naturalHeight]), gallery: document.querySelectorAll('#gui .ggallery:not(.gphotos) [data-cmd]').length }))()`);
+      check(ov.heading === '// PHOTOS' && ov.cards.join() === 'view 5,view 6' && ov.gallery === 4, 'the overview has a PHOTOS section and the four renders stay under GALLERY', JSON.stringify(ov));
+      check(ov.dims[0][0] === String(ov.dims[0][2]) && ov.dims[0][1] === String(ov.dims[0][3]) && ov.dims[1][0] === String(ov.dims[1][2]), 'thumbnail sizes are declared exactly (no jumping)', JSON.stringify(ov.dims));
+
+      // A photo in the terminal: ASCII first, then the real image, with the shooting details
+      await ev(`document.querySelector('#gui [data-cmd="view 5"]').click()`);
+      await until(() => ev(`!!document.querySelector('#log figure.shot .exif')`), 3000, 'figure with details');
+      const expectedLine = `${expected.camera} · ${expected.lens} · ${expected.focal} mm · f/${expected.aperture} · ${expected.shutter} s · ISO ${expected.iso}`;
+      check((await ev(`document.querySelector('#log figure.shot .exif').textContent`)) === expectedLine, 'the shooting details are shown under the picture', expectedLine);
+      await until(() => ev(`(() => { const p = document.querySelector('#log figure.shot .shot-ascii'); return !!p && !p.hidden && p.textContent.length > 200; })()`), 4000, 'ascii phase');
+      check(true, 'a photo is drawn in characters first, like the other pictures');
+      await until(() => ev(`document.querySelector('#log figure.shot .shot-ascii').hidden`), 6000, 'ascii phase ends');
+      check(await ev(`(() => { const i = document.querySelector('#log figure.shot .shot-img'); return i.complete && i.naturalWidth === 1600; })()`), 'then the full photo');
+      await shot('27-photo-terminal', 1300);
+
+      // In a floating window
+      await ev(`document.querySelector('#log figure.shot .shot-open').click()`);
+      await until(() => ev(`!!document.querySelector('#windows .win .exif')`), 3000, 'photo window');
+      const pw = await ev(`(() => { const w = document.querySelector('#windows .win'); const r = w.getBoundingClientRect(); return { title: w.querySelector('.wtitle').textContent, meta: w.querySelector('.wmeta').textContent, exif: w.querySelector('.exif').textContent, inside: r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth, tag: w.querySelector('.exif').tagName }; })()`);
+      check(pw.title === 'test-1-fix' || pw.title === `${made[0].slug}.jpg`, 'the window is titled with the file name', JSON.stringify(pw));
+      check(pw.meta === '1600×1067 · JPG' && pw.exif === expectedLine && pw.tag === 'SMALL', 'the window shows size and the shooting details (as text)', JSON.stringify(pw));
+      check(pw.inside, 'the photo window fits on the screen');
+      await shot('27-photo-window', 400);
+      await ev(`document.querySelector('#windows .wnext').click()`);
+      await until(() => ev(`document.querySelector('#windows .win .wmeta').textContent.startsWith('1067×1600')`), 3000, 'next photo (portrait)');
+      await until(() => ev(`(() => { const i = document.querySelector('#windows .wstage img'); return i.complete && i.naturalWidth > 0; })()`), 5000, 'portrait photo loaded');
+      const tall = await ev(`(() => { const w = document.querySelector('#windows .win'); const r = w.getBoundingClientRect(); const i = w.querySelector('.wstage img').getBoundingClientRect(); return { inside: r.bottom <= innerHeight + 1 && r.top >= 0, imgH: Math.round(i.height), imgW: Math.round(i.width) }; })()`);
+      check(tall.inside && tall.imgH > tall.imgW, 'a portrait photo also fits in the window (letterboxed, not cropped)', JSON.stringify(tall));
+      await ev(`document.querySelector('#windows .win').focus()`);
+      await key('Escape', 'Escape', 27);
+
+      // Dock and language
+      await typeText('photos'); await enter(); await sleep(300);
+      check((await ev(`document.querySelector('.dock-item[aria-current="true"]')?.dataset.cmd`)) === 'gallery', 'photos highlights the gallery item in the dock');
+      await typeText('lang zh'); await enter(); await sleep(900);
+      await typeText('photos'); await enter();
+      await until(async () => (await logText()).includes('測試照片 2'), 3000, 'zh photos');
+      check((await logText()).includes('每張照片下方有拍攝資訊') && (await ev(`document.querySelector('#g-photos').textContent`)) === '// 攝影', 'photography is available in Traditional Chinese');
+      await typeText('lang en'); await enter(); await sleep(700);
+      // Contrast of the details line in every theme
+      for (const theme of ['dark', 'light', 'amber', 'matrix']) {
+        await typeText(`theme ${theme}`); await enter(); await sleep(700);
+        // The details line is drawn in --accent on the panel colour: resolve both through probe elements (computed values come back as rgb()).
+        const cr = await ev(`(() => { const lum = (c) => { const m = c.match(/[\\d.]+/g).map(Number).slice(0, 3).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * m[0] + 0.7152 * m[1] + 0.0722 * m[2]; }; const probe = document.createElement('i'); probe.style.color = 'var(--accent)'; probe.style.backgroundColor = 'var(--panel)'; document.body.append(probe); const cs = getComputedStyle(probe); const used = getComputedStyle(document.querySelector('#log .exif')).color; const fg = cs.color; const bgc = cs.backgroundColor; probe.remove(); const a = lum(fg); const b = lum(bgc); return { ratio: (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05), usesAccent: used === fg, used, accent: fg }; })()`);
+        check(cr.usesAccent && cr.ratio >= 4.5, `the shooting details have AA contrast in the ${theme} theme`, JSON.stringify(cr));
+      }
+      // Phone
+      await viewport(390, 844, true);
+      await load('about:blank'); await load('http://127.0.0.1:5192/'); await bootDone();
+      await typeText('view 6'); await enter();
+      await until(() => ev(`!!document.querySelector('#log figure.shot .exif')`), 3000, 'phone figure');
+      await sleep(1500);
+      check((await ev(`document.documentElement.scrollWidth - innerWidth`)) <= 0, 'a photo with its details fits a phone screen without sideways scrolling');
+      await ev(`document.querySelector('#log figure.shot .shot-open').click()`);
+      await until(() => ev(`!!document.querySelector('dialog.viewer[open] .exif')`), 3000, 'phone dialog');
+      check((await ev(`document.querySelector('dialog.viewer .exif').textContent`)).includes('f/1.8'), 'on a phone the modal viewer also shows the details');
+      await shot('27-photo-phone', 300);
+      await key('Escape', 'Escape', 27);
+      await viewport(1440, 900);
+      consoleErrors.length = errorsBefore;
+    } finally {
+      await load('about:blank').catch(() => {});
+      photoServer?.kill();
+      await rm(photoDir, { recursive: true, force: true }).catch(() => {});
+    }
   }
 
   check(consoleErrors.length === 0, 'no console errors / CSP violations', consoleErrors.join(' | '));

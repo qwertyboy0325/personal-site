@@ -74,7 +74,7 @@ export function block(b, o = DEFAULTS) {
         + `<img class="shot-img" src="${esc(b.poster ?? b.src)}" width="${esc(b.width)}" height="${esc(b.height)}" alt="${esc(b.alt)}" decoding="async">`
         + (video ? '<span class="shot-play" aria-hidden="true">▶</span>' : '')
         + '</button>'
-        + `<figcaption><strong>${esc(b.title)}</strong> <span class="dim">${esc(b.caption)}</span></figcaption></figure>`;
+        + `<figcaption><strong>${esc(b.title)}</strong> <span class="dim">${esc(b.caption)}</span>${b.shot ? `<span class="exif">${esc(b.shot)}</span>` : ''}</figcaption></figure>`;
     }
     case 'ascii3d':
       return `<pre class="art ascii3d" role="img" aria-label="${esc(b.label ?? 'ASCII 3D model')}" data-ascii3d data-shape="${esc(b.shape ?? 'donut')}">${esc(b.v)}</pre>`;

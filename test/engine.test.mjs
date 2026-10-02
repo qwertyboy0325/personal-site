@@ -211,7 +211,7 @@ test('gallery: list, view by number and name, errors, aliases, both languages', 
   assert.equal(one.width, gallery[0].width);
   assert.equal(one.alt, gallery[0].en.alt);
   assert.equal(execute(`view ${gallery[1].slug}`, ctx()).blocks.find((b) => b.t === 'image').slug, gallery[1].slug);
-  const video = execute(`view ${gallery.length}`, ctx()).blocks.find((b) => b.t === 'image');
+  const video = execute(`view ${gallery.findIndex((g) => g.kind === 'video') + 1}`, ctx()).blocks.find((b) => b.t === 'image');
   assert.equal(video.kind, 'video');
   assert.ok(video.poster.endsWith('.jpg'));
   assert.match(text('view 99'), /no match/);

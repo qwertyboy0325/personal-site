@@ -4,12 +4,16 @@
 // Everything is built with properties and textContent, never with innerHTML.
 
 import { ui } from './content.js';
+import { formatShot } from './photos.js';
 
 /** "assets/gallery/black-hole-scene.jpg" -> "black-hole-scene.jpg" */
 export const fileName = (src) => String(src).split('/').at(-1);
 
 /** "640×640 · JPG" (the size comes from the declared, test-verified dimensions). */
 export const metaLine = (g) => `${g.width}×${g.height} · ${fileName(g.src).split('.').at(-1).toUpperCase()}`;
+
+/** The shooting details of a photo ("50 mm · f/1.8 · 1/250 s · ISO 100"), or '' for everything else. */
+export const shotLine = (g) => formatShot(g.shot);
 
 /** Wrap an index into 0..len-1 (so ← from the first goes to the last). */
 export const wrapIndex = (i, len) => ((Math.trunc(i) % len) + len) % len;

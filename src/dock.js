@@ -15,10 +15,10 @@ export function scaleFor(distance, { radius = DOCK_RADIUS, max = DOCK_MAX } = {}
   return 1 + (max - 1) * (0.5 + 0.5 * Math.cos((d / radius) * Math.PI));
 }
 
-/** Which dock item a command line belongs to: `project 2` -> projects, `view 1` -> gallery, `about` -> about, otherwise null. */
+/** Which dock item a command line belongs to: `project 2` -> projects, `view 1` or `photos` -> gallery, `about` -> about, otherwise null. */
 export function dockKey(line) {
   const word = String(line ?? '').trim().toLowerCase().split(/\s+/)[0];
-  const key = { project: 'projects', work: 'works', view: 'gallery' }[word] ?? word;
+  const key = { project: 'projects', work: 'works', view: 'gallery', photos: 'gallery', photo: 'gallery', photography: 'gallery' }[word] ?? word;
   return NAV.has(key) ? key : null;
 }
 

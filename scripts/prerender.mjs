@@ -7,7 +7,7 @@
 
 import { readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { execute, welcomeBlocks } from '../src/engine.js';
+import { execute, welcomeBlocks, HAS_PHOTOS } from '../src/engine.js';
 import { renderEntry } from '../src/render.js';
 
 const START = '<!-- prerender:start -->';
@@ -17,7 +17,7 @@ const ctx = { lang: 'en', theme: 'dark', history: [] };
 export function buildStatic() {
   const opts = { interactive: false };
   const entries = [renderEntry(welcomeBlocks(ctx), opts)];
-  for (const cmd of ['about', 'projects', 'works', 'gallery', 'skills', 'contact']) {
+  for (const cmd of ['about', 'projects', 'works', 'gallery', ...(HAS_PHOTOS ? ['photos'] : []), 'skills', 'contact']) {
     entries.push(renderEntry([{ t: 'echo', v: cmd }, ...execute(cmd, ctx).blocks], opts));
   }
   return entries.join('\n');

@@ -119,6 +119,8 @@ test('stylesheet: split screen on wide screens, tabs on narrow ones, hidden in p
   assert.match(css, /@media \(min-width: 1000px\)\s*\{[^@]*html\[data-hud="on"\] \.window \{[^}]*grid-column: 2;/, 'the terminal is pinned to column 2 so it does not jump when the overview appears');
   assert.match(css, /@media \(max-width: 999\.98px\)\s*\{[^@]*html\[data-hud="on"\] \.tabs \{ display: flex/);
   assert.match(css, /html\[data-hud="on"\]\[data-view="gui"\] \.window \{ display: none; \}/);
+  assert.match(css, /html\[data-hud="on"\] \.tabs\[hidden\] \{ display: flex !important; visibility: hidden; \}/, 'the tab bar keeps its space before JS reveals it (no layout jump)');
+  assert.match(css, /html\[data-hud="on"\] \.tabs \{[^}]*justify-self: stretch; width: 100%;/, 'the tab bar spans the full width (the stage centres its children, which shrink-wrapped it)');
   assert.match(css, /@media print \{ \.gui, \.tabs \{ display: none !important; \} \}/);
   assert.match(css, /\.recent-btn \{[^}]*min-height: 24px/, 'targets meet the 24px WCAG 2.2 minimum');
   assert.match(css, /\.tab \{[^}]*min-height: 44px/, 'tabs are touch-sized');

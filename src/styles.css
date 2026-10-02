@@ -459,9 +459,11 @@ html.rt-on input { cursor: text; }
 }
 /* narrow: one pane at a time, switched by the tabs */
 @media (max-width: 999.98px) {
-  html[data-hud="on"] .tabs { display: flex; gap: 8px; padding: 8px 12px; justify-content: center; }
+  html[data-hud="on"] .tabs { display: flex; gap: 8px; padding: 8px 12px; justify-content: center; justify-self: stretch; width: 100%; } /* .stage centres its children: without this the bar shrink-wrapped to its buttons (and a wrapped label made it taller) */
   html[data-hud="on"][data-view="gui"] .gui { display: flex; height: min(calc(100dvh - 120px), 860px); }
   html[data-hud="on"][data-view="gui"] .window { display: none; }
+  /* The tab bar is revealed by JS a moment after first paint: keep its space (invisible) so the terminal does not jump down when it appears. */
+  html[data-hud="on"] .tabs[hidden] { display: flex !important; visibility: hidden; }
 }
 @media (max-width: 640px) {
   html[data-hud="on"] .stage { display: block; }
@@ -548,11 +550,13 @@ html.rt-on input { cursor: text; }
 .entry .shot-ascii { position: absolute; inset: 0; margin: 0; overflow: hidden; white-space: pre; font-family: inherit; color: var(--accent); background: var(--panel); }
 .shot.is-ascii .shot-img { visibility: hidden; }
 .shot-play { position: absolute; right: 10px; bottom: 10px; width: 36px; height: 36px; display: grid; place-items: center; font-size: 14px; color: var(--bg); background: var(--accent); border-radius: 50%; pointer-events: none; }
+.exif { display: block; margin-top: 4px; font-size: 11px; letter-spacing: 0.03em; color: var(--accent); }
 .shot figcaption { margin-top: 6px; font-size: 12px; line-height: 1.5; }
 .gthumb { gap: 8px; }
 .gthumb-wrap { position: relative; display: block; width: 100%; overflow: hidden; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); }
 .gthumb-wrap img { display: block; width: 100%; height: auto; }
 .ggallery { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+.gphotos { align-items: start; } /* photos have different shapes: each card hugs its own picture instead of stretching to the tallest one */
 
 /* ---- viewer window (src/lightbox.js) -------------------------------------------------------- */
 .viewer { width: min(92vw, 860px); max-height: 92vh; max-height: 92dvh; padding: 0; overflow: hidden; color: var(--fg); background: var(--panel); border: 1px solid var(--accent); border-radius: 10px; box-shadow: 0 30px 90px rgba(0, 0, 0, 0.7); }

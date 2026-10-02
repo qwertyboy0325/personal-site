@@ -18,3 +18,25 @@ public repository; they are the owner's own output. To refresh a picture, conver
 new render the same way (for example
 `sips -s format jpeg -s formatOptions 82 -Z 1024 in.png --out out.jpg`) and update the
 width/height in `src/content.js` (a test checks they match the file).
+
+## Photographs
+
+The owner's own photographs (Nikon Z 6), taken on one day in February 2025, chosen by the
+owner for this site. Each went through `node scripts/add-photo.mjs`, which converts to sRGB,
+fixes rotation, resizes to 1600 px (thumbnail 480 px) and removes all metadata (GPS position,
+serial numbers, owner name, embedded thumbnail); only the camera, lens, focal length,
+aperture, shutter and ISO are kept, as text in `src/content.js`. Nothing is from anyone
+else's work. The people in the pictures are shown with the owner's decision to publish them.
+
+- `photo-backpack-on-the-grass.jpg` (+ `-thumb`)
+- `photo-looking-back.jpg` (+ `-thumb`)
+- `photo-ridge-in-the-sun.jpg` (+ `-thumb`)
+- `photo-looking-at-the-mountain.jpg` (+ `-thumb`)
+- `photo-walker-on-the-path.jpg` (+ `-thumb`)
+- `photo-three-posts.jpg` (+ `-thumb`)
+- `photo-dog-on-the-path.jpg` (+ `-thumb`)
+- `photo-warm-light-on-concrete.jpg` (+ `-thumb`)
+- `photo-close-portrait.jpg` (+ `-thumb`)
+- `photo-two-in-the-light.jpg` (+ `-thumb`)
+- `photo-sun-over-the-valley.jpg` (+ `-thumb`)
+- `photo-figure-on-the-lawn.jpg` (+ `-thumb`)

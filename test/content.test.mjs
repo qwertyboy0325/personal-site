@@ -197,6 +197,7 @@ test('the posture design is credited as a team project, never as sole authorship
 // ---- gallery: files, real dimensions, bilingual text, plain language -----------------------
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { gallery } from '../src/content.js';
+import { isPhoto } from '../src/photos.js';
 
 const rootUrl = (rel) => new URL(`../${rel}`, import.meta.url);
 
@@ -227,16 +228,23 @@ test('gallery: every file exists and its declared width/height are the real pixe
   }
 });
 
-test('gallery: stays light (per-file and total budget)', () => {
+test('gallery: stays light (per-file and total budget; photos get a larger one)', () => {
   let total = 0;
+  let photoTotal = 0;
   for (const g of gallery) {
     for (const rel of [g.src, g.thumb, ...(g.poster ? [g.poster] : [])]) {
       const kb = statSync(rootUrl(rel)).size / 1024;
-      total += kb;
-      assert.ok(kb < (rel.endsWith('.mp4') ? 600 : 200), `${rel} is ${kb.toFixed(0)} KB`);
+      if (isPhoto(g)) {
+        photoTotal += kb;
+        assert.ok(kb < (rel === g.thumb ? 40 : 450), `${rel} is ${kb.toFixed(0)} KB`);
+      } else {
+        total += kb;
+        assert.ok(kb < (rel.endsWith('.mp4') ? 600 : 200), `${rel} is ${kb.toFixed(0)} KB`);
+      }
     }
   }
   assert.ok(total < 1200, `gallery assets total ${total.toFixed(0)} KB`);
+  assert.ok(photoTotal < 8000, `photos total ${photoTotal.toFixed(0)} KB`);
 });
 
 test('gallery: text is complete in both languages, every image has real alt text, and captions say what the picture is not', () => {

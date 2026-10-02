@@ -8,10 +8,13 @@ import { TRANSITION_MODES } from './fx/transition.js';
 import { CURSOR_MODES } from './fx/reticle.js';
 import { SHAPES, REST_POSE, renderFrame } from './fx/ascii3d.js';
 import { renderFace } from './fx/face.js';
+import { isPhoto, formatShot } from './photos.js';
 
-export const PUBLIC_COMMANDS = ['about', 'projects', 'works', 'gallery', 'view', 'skills', 'contact', 'ls', 'cat', 'open', 'theme', 'lang', 'ascii', '3d', 'fx', 'transition', 'cursor', 'hud', 'clear', 'history', 'help'];
+/** Photography only appears (command, help, aliases) once there is at least one photo in the gallery. */
+export const HAS_PHOTOS = gallery.some(isPhoto);
+export const PUBLIC_COMMANDS = ['about', 'projects', 'works', 'gallery', ...(HAS_PHOTOS ? ['photos'] : []), 'view', 'skills', 'contact', 'ls', 'cat', 'open', 'theme', 'lang', 'ascii', '3d', 'fx', 'transition', 'cursor', 'hud', 'clear', 'history', 'help'];
 const HIDDEN_COMMANDS = ['project', 'work', 'whoami', 'date', 'echo', 'neofetch', 'sudo', 'exit'];
-const ALIASES = { face: 'ascii', gui: 'hud', images: 'gallery', pictures: 'gallery', repos: 'projects', '?': 'help', man: 'help', cls: 'clear', dir: 'ls', ll: 'ls' };
+const ALIASES = { face: 'ascii', gui: 'hud', images: 'gallery', pictures: 'gallery', ...(HAS_PHOTOS ? { photo: 'photos', photography: 'photos' } : {}), repos: 'projects', '?': 'help', man: 'help', cls: 'clear', dir: 'ls', ll: 'ls' };
 /** Commands whose output is addressable through the URL hash. */
 export const HUD_MODES = ['on', 'off'];
 /** Typing a shape's name on its own (`cube`) is a shortcut for `3d cube`. */
@@ -124,13 +127,25 @@ const findView = (q) => {
 
 const firstSentence = (text) => text.match(/^.*?[.。]/)?.[0] ?? text;
 
+/** A numbered, clickable list of gallery entries; the numbers are the entries' positions in the whole gallery (what `view` takes). */
+function pictureList(entries, ctx) {
+  const t = T(ctx);
+  return ul(entries.map(([g, i]) => [{ cmd: `view ${i + 1}`, text: `${i + 1}. ${g[ctx.lang].title}${g.kind === 'video' ? ` ▶ ${t.viewer.play}` : ''}` }, { sub: firstSentence(g[ctx.lang].caption) }]));
+}
+
 function galleryBlocks(ctx) {
   const t = T(ctx);
-  return [
-    h(t.galleryTitle),
-    ul(gallery.map((g, i) => [{ cmd: `view ${i + 1}`, text: `${i + 1}. ${g[ctx.lang].title}${g.kind === 'video' ? ` ▶ ${t.viewer.play}` : ''}` }, { sub: firstSentence(g[ctx.lang].caption) }])),
-    p(...t.galleryHint),
-  ];
+  const all = gallery.map((g, i) => [g, i]);
+  const works = all.filter(([g]) => !isPhoto(g));
+  const photos = all.filter(([g]) => isPhoto(g));
+  if (!photos.length) return [h(t.galleryTitle), pictureList(works, ctx), p(...t.galleryHint)];
+  return [h(t.galleryTitle), p({ dim: t.galleryWorksHeading }), pictureList(works, ctx), p({ dim: t.galleryPhotosHeading }), pictureList(photos, ctx), p(...t.galleryHint)];
+}
+
+function photosBlocks(ctx) {
+  const t = T(ctx);
+  const photos = gallery.map((g, i) => [g, i]).filter(([g]) => isPhoto(g));
+  return [h(t.photosTitle), pictureList(photos, ctx), p(...t.photosHint(photos[0][1] + 1))];
 }
 
 /** One picture or video as a block; main.js animates it and the lightbox opens it. */
@@ -138,7 +153,7 @@ function viewBlocks(g, index, ctx) {
   const t = T(ctx);
   const c = g[ctx.lang];
   const out = [
-    { t: 'image', index: index + 1, slug: g.slug, kind: g.kind, src: g.src, poster: g.poster ?? null, width: g.width, height: g.height, alt: c.alt, title: c.title, caption: c.caption, source: g.source ?? null, open: t.viewer.open },
+    { t: 'image', index: index + 1, slug: g.slug, kind: g.kind, src: g.src, poster: g.poster ?? null, width: g.width, height: g.height, alt: c.alt, title: c.title, caption: c.caption, shot: formatShot(g.shot), source: g.source ?? null, open: t.viewer.open },
   ];
   const wi = works.findIndex((w) => w.slug === g.work);
   if (wi >= 0) out.push(p({ dim: `${t.viewer.related}: ` }, { cmd: `work ${wi + 1}`, text: works[wi][ctx.lang].title }));
@@ -232,6 +247,8 @@ const commands = {
   works: (_a, ctx) => ({ blocks: worksBlocks(ctx) }),
 
   gallery: (_a, ctx) => ({ blocks: galleryBlocks(ctx) }),
+
+  ...(HAS_PHOTOS ? { photos: (_a, ctx) => ({ blocks: photosBlocks(ctx) }) } : {}),
 
   view(args, ctx) {
     const t = T(ctx);

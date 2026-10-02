@@ -56,6 +56,7 @@ src/render.js         區塊 -> HTML 字串，唯一的渲染器（瀏覽器與�
 src/main.js           DOM、鍵盤、主題、語言、開機、各效果的接線
 src/lightbox.js       圖片檢視器（窄螢幕／觸控）：原生 <dialog>（焦點陷阱、Esc、焦點回到來源），支援影片，關閉時停止播放
 src/windows.js        圖片檢視器（寬螢幕＋滑鼠）：可拖曳、可堆疊的浮動視窗（最多 6 個、拖曳限制在畫面內、非 modal，終端機照常可用）
+src/photos.js         攝影：拍攝資訊的白名單與格式化（純函式）
 src/dock.js           寬螢幕＋滑鼠的 dock 導覽：七個主要指令、游標附近的圖示放大、目前區段的圓點（純函式 + 小控制器）
 src/viewer-content.js 兩種檢視器共用：檔名／尺寸、<img>/<video> 的建立、停止影片
 src/fx/imgascii.js    圖片 -> ASCII（純函式：RGBA 像素 -> 字元，含自動對比與透明度處理）
@@ -108,6 +109,14 @@ test/                 node:test 單元測試
 **內容規則**：只放你自己的公開 repo 與對外定位；不要寫私有專案名稱、客戶、數字或營收。每個主張都應能對應到公開的證據。
 
 **作品（`works`）**：除了 4 個程式專案，另有 6 項作品（視覺與 3D、研究與思考、設計）。每一項都已對照原始資料查證，只用可公開的部分並去識別化（不含私人專案名稱、合作對象、客戶、金額）；每一項都有「不主張」欄位說明沒有宣稱什麼。只有確實有公開頁面的才附連結。新增作品請照 `works` 的欄位格式寫，`test/content.test.mjs` 會擋下私人字眼與術語。
+
+**攝影**：網站上現在有 12 張你自己的照片（Nikon Z 6，2025 年 2 月某一天拍的；圖庫編號 5–16，標題與說明是依照片內容寫的、不含地點與姓名，歡迎自行改寫）。`photos` 指令與概覽的「攝影」區塊在沒有任何照片時不會出現（不會有空的區塊）。要加新照片：
+
+1. `node scripts/add-photo.mjs ~/路徑/照片.jpg`（可一次多張；需要 macOS 的 `sips` 與 ImageMagick）。它會轉成 sRGB、修正旋轉、輸出 1600px 大圖與 480px 縮圖到 `assets/gallery/`，**移除所有中繼資料**（GPS 位置、機身序號、擁有者姓名、內嵌縮圖），從原檔讀出相機與曝光資訊，並印出要貼進 `src/content.js` `gallery` 的條目（`set: 'photo'`、`shot: {…}`）。
+2. 你自己填雙語的 `title`、`caption`、`alt`（不要寫你不想公開的地點或人物），並在 `assets/gallery/SOURCES.md` 記下檔案。
+3. `npm run check`。
+
+拍攝資訊只會顯示 `camera · lens · focal · aperture · shutter · iso` 這六個欄位（`src/photos.js` 的白名單，其他欄位進不了頁面）。測試會檢查：`assets/` 底下每一張 JPEG 都沒有 Exif／GPS／XMP／IPTC／註解；`add-photo` 對一張刻意塞滿 GPS、序號、姓名的假照片能完整清除並正確讀出相機資訊；有照片時的指令、概覽、檢視器與靜態頁（`test/photos-site.test.mjs`、e2e 的 photography 段落，後者用一份含兩張照片的網站副本在真實瀏覽器中驗證）。
 
 **圖片**：只放你自己的作品或公開專案的輸出，放在 `assets/gallery/`，並在 `SOURCES.md` 記下來源。新增圖片時在 `src/content.js` 的 `gallery` 填寫實際的 `width`／`height`（測試會核對，避免載入時版面跳動）、雙語標題與說明、以及描述圖片內容的 `alt`；說明文字要老實寫出「這張圖不是什麼」。縮圖與轉檔可用 macOS 內建的 `sips`（例如 `sips -s format jpeg -s formatOptions 82 -Z 1024 in.png --out out.jpg`）。每個檔案 < 200 KB（影片 < 600 KB）、總量 < 1.2 MB 由測試把關。影片要把索引放在檔案最前面（`ffmpeg -i in.mp4 -c copy -movflags +faststart out.mp4`，不重新編碼），否則瀏覽器得先抓檔案尾端才能開始播，測試也會擋下。
 

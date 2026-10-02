@@ -4,7 +4,7 @@
 // video stops when it is closed or replaced, and focus returns to what opened it.
 
 import { gallery, ui } from './content.js';
-import { buildMedia, stopMedia, sourceLink, wrapIndex } from './viewer-content.js';
+import { buildMedia, stopMedia, sourceLink, shotLine, wrapIndex } from './viewer-content.js';
 
 export function createLightbox({ getLang, reduceMotion = false }) {
   const dlg = document.createElement('dialog');
@@ -34,7 +34,14 @@ export function createLightbox({ getLang, reduceMotion = false }) {
     const c = g[lang];
     el.title.textContent = c.title;
     el.count.textContent = t.counter(index + 1, gallery.length);
-    el.cap.textContent = c.caption;
+    el.cap.replaceChildren(c.caption);
+    const shot = shotLine(g);
+    if (shot) {
+      const exif = document.createElement('small');
+      exif.className = 'exif';
+      exif.textContent = shot;
+      el.cap.append(exif);
+    }
     el.close.textContent = '✕';
     el.close.setAttribute('aria-label', t.close);
     el.prev.textContent = '←';

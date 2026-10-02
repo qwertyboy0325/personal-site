@@ -7,7 +7,7 @@
 // pictures. Everything is inserted as text or properties (no innerHTML with content).
 
 import { gallery, ui } from './content.js';
-import { buildMedia, stopMedia, sourceLink, fileName, metaLine, wrapIndex } from './viewer-content.js';
+import { buildMedia, stopMedia, sourceLink, fileName, metaLine, shotLine, wrapIndex } from './viewer-content.js';
 
 export const MAX_WINDOWS = 6;
 export const Z_BASE = 30; // above the page, below the page wipe (60), the reticle (70) and the toast (90)
@@ -68,6 +68,13 @@ export function createWindows({ getLang, reduceMotion = false }) {
     const span = document.createElement('span');
     span.textContent = c.caption;
     w.cap.append(strong, ' ', span);
+    const shot = shotLine(g);
+    if (shot) {
+      const exif = document.createElement('small');
+      exif.className = 'exif';
+      exif.textContent = shot;
+      w.cap.append(exif);
+    }
     w.close.setAttribute('aria-label', `${t.close}: ${fileName(g.src)}`);
     w.prev.setAttribute('aria-label', t.prev);
     w.next.setAttribute('aria-label', t.next);
