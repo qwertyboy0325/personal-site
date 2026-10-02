@@ -56,6 +56,7 @@ src/render.js         區塊 -> HTML 字串，唯一的渲染器（瀏覽器與�
 src/main.js           DOM、鍵盤、主題、語言、開機、各效果的接線
 src/lightbox.js       圖片檢視器（窄螢幕／觸控）：原生 <dialog>（焦點陷阱、Esc、焦點回到來源），支援影片，關閉時停止播放
 src/windows.js        圖片檢視器（寬螢幕＋滑鼠）：可拖曳、可堆疊的浮動視窗（最多 6 個、拖曳限制在畫面內、非 modal，終端機照常可用）
+src/dock.js           寬螢幕＋滑鼠的 dock 導覽：七個主要指令、游標附近的圖示放大、目前區段的圓點（純函式 + 小控制器）
 src/viewer-content.js 兩種檢視器共用：檔名／尺寸、<img>/<video> 的建立、停止影片
 src/fx/imgascii.js    圖片 -> ASCII（純函式：RGBA 像素 -> 字元，含自動對比與透明度處理）
 assets/gallery/       圖片與影片；`SOURCES.md` 記錄每個檔案的來源與轉檔方式
@@ -91,6 +92,7 @@ test/                 node:test 單元測試
 - 嚴格的 CSP（`default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; media-src 'self'`，部署版沒有 `connect-src`，頁面無法對外發出任何請求）：沒有行內腳本、沒有行內樣式、沒有第三方來源。
 - 使用者輸入（例如 `echo`）一律跳脫；只有 `https://` 連結會被渲染成 `<a>`，且帶 `rel="noopener noreferrer"`。
 - 排版：終端機與細節用等寬字；只有大名字與標題用系統無襯線字（`--display`），名字用 `clamp()` 流體縮放（手機 40px → 寬螢幕 68px），320px 也不會溢出；e2e 逐寬度驗證。
+- Dock 導覽（寬螢幕＋滑鼠）：浮在畫面底部中央，取代快速指令按鈕；滑鼠靠近時圖示放大（只用 transform，不會讓版面位移），鍵盤聚焦也會放大，減少動態時不放大；窄螢幕與觸控維持原本的按鈕。終端機與概覽會自動讓出 dock 的高度（`--dock-h`），「已複製」提示也在 dock 上方。
 - 狀態列（終端機視窗底部）顯示版本號與「0 cookies · 0 trackers · 0 dependencies」，每一句都有測試把關（`test/status.test.mjs`）：`package.json` 沒有任何 dependencies、`src/` 只有相對路徑的 import、程式碼不碰 cookie、沒有任何網路請求且 CSP 不允許外部主機。改版本號時要同時改 `package.json`、`src/content.js` 的 `VERSION` 與 `index.html`（測試會提醒）。
 - 不使用外部字型、不做任何分析或追蹤。`localStorage` 的讀寫都包了 try/catch。
 

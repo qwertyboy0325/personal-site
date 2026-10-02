@@ -111,5 +111,15 @@
       <footer class="status" id="status" aria-label="Site details"><span class="status-ver">v1.0.0</span><span class="status-claims">0 cookies · 0 trackers · 0 dependencies</span></footer>
     </div>
   </main>
+  <!-- Wide screens with a mouse: a dock instead of the quick-command buttons (src/dock.js). -->
+  <nav class="dock" id="dock" aria-label="Quick commands" hidden>
+        <button type="button" class="dock-item" data-cmd="about"><span class="dock-ico" aria-hidden="true">@</span><span class="dock-lbl">about</span></button>
+        <button type="button" class="dock-item" data-cmd="projects"><span class="dock-ico" aria-hidden="true">{}</span><span class="dock-lbl">projects</span></button>
+        <button type="button" class="dock-item" data-cmd="works"><span class="dock-ico" aria-hidden="true">▣</span><span class="dock-lbl">works</span></button>
+        <button type="button" class="dock-item" data-cmd="gallery"><span class="dock-ico" aria-hidden="true">▦</span><span class="dock-lbl">gallery</span></button>
+        <button type="button" class="dock-item" data-cmd="skills"><span class="dock-ico" aria-hidden="true">#</span><span class="dock-lbl">skills</span></button>
+        <button type="button" class="dock-item" data-cmd="contact"><span class="dock-ico" aria-hidden="true">✉</span><span class="dock-lbl">contact</span></button>
+        <button type="button" class="dock-item" data-cmd="help"><span class="dock-ico" aria-hidden="true">?</span><span class="dock-lbl">help</span></button>
+  </nav>
 </body>
 </html>

@@ -15,6 +15,7 @@
     let hud = 'on';
     try { if (localStorage.getItem('hud') === 'off') hud = 'off'; } catch { /* storage blocked: default */ }
     document.documentElement.dataset.hud = hud;
+    document.documentElement.dataset.dock = 'on'; // space for the dock on wide screens (CSS decides whether it applies)
   } catch { /* nothing to reserve */ }
 
   const WAIT_MS = 3000;

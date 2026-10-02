@@ -134,7 +134,7 @@ body {
   display: flex;
   flex-direction: column;
   width: min(100%, 980px);
-  height: min(calc(100dvh - 48px), 860px);
+  height: min(calc(100dvh - 48px - var(--dock-h, 0px)), 860px);
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -309,6 +309,24 @@ a.lnk::after { content: "\00a0↗"; font-size: 0.8em; color: var(--dim); }
 .chip:hover { border-color: var(--accent); color: var(--accent); }
 .chip:active { transform: translateY(1px); }
 
+/* ---- dock: wide screens with a mouse (src/dock.js). It replaces the quick-command buttons there. ---- */
+.dock { display: none; }
+@media (min-width: 1000px) and (hover: hover) and (pointer: fine) {
+  html[data-dock="on"] { --dock-h: 72px; }
+  html[data-dock="on"] .stage { padding-bottom: calc(24px + var(--dock-h)); }
+  html[data-dock="on"] .chips { display: none; }
+  html[data-dock="on"] .dock { position: fixed; left: 50%; bottom: 12px; z-index: 25; display: flex; gap: 14px; padding: 8px 14px; transform: translateX(-50%); background: color-mix(in srgb, var(--bar) 88%, transparent); border: 1px solid var(--line); border-radius: 18px; box-shadow: 0 14px 40px -12px rgba(0, 0, 0, 0.6); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
+  .dock-item { --s: 1; position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; min-width: 56px; height: 56px; padding: 4px 8px; font: inherit; color: var(--fg); background: transparent; border: 1px solid transparent; border-radius: 12px; cursor: pointer; transform: scale(var(--s)); transform-origin: 50% 100%; transition: transform 0.12s ease-out, border-color 0.15s, background 0.15s; }
+  .dock-ico { font-size: 20px; line-height: 24px; color: var(--accent); }
+  .dock-lbl { font-size: 11px; line-height: 14px; letter-spacing: 0.04em; color: var(--dim); }
+  .dock-item:hover, .dock-item:focus-visible { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, transparent); }
+  .dock-item:hover .dock-lbl, .dock-item:focus-visible .dock-lbl, .dock-item[aria-current="true"] .dock-lbl { color: var(--fg); }
+  .dock-item:focus-visible { transform: scale(max(var(--s), 1.2)); } /* keyboard focus enlarges it too (JS only sets --s for the mouse) */
+  .dock-item:active { transition-duration: 0s; transform: scale(calc(var(--s) - 0.06)); }
+  .dock-item[aria-current="true"]::after { content: ""; position: absolute; left: 50%; bottom: -7px; width: 5px; height: 5px; margin-left: -2.5px; border-radius: 50%; background: var(--accent2); box-shadow: 0 0 6px var(--accent2); }
+}
+@media (prefers-reduced-motion: reduce) { .dock-item { transition: border-color 0.15s, background 0.15s; } }
+
 /* ---- responsive ---------------------------------------------------------- */
 @media (max-width: 640px) {
   :root { --fs: 16px; }
@@ -351,7 +369,7 @@ html[data-fx="on"] .window { background: color-mix(in srgb, var(--panel) 90%, tr
 
 @media print {
   body { background: #fff; color: #000; }
-  .bar, .chips, .prompt, .skip { display: none !important; }
+  .bar, .chips, .dock, .prompt, .skip { display: none !important; }
   .stage { padding: 0; display: block; }
   .window { height: auto; border: 0; box-shadow: none; background: #fff; }
   .screen { overflow: visible; }
@@ -431,7 +449,7 @@ html.rt-on input { cursor: text; }
 
 /* ---- split screen: overview pane + terminal (src/gui.js, src/hud.js) -------- */
 .gui, .tabs { display: none; }
-.gui { flex-direction: column; gap: 14px; align-self: center; justify-self: stretch; height: min(calc(100dvh - 48px), 860px); overflow-y: auto; padding: 2px 8px 2px 2px; scrollbar-width: thin; scrollbar-color: var(--line) transparent; overscroll-behavior: contain; }
+.gui { flex-direction: column; gap: 14px; align-self: center; justify-self: stretch; height: min(calc(100dvh - 48px - var(--dock-h, 0px)), 860px); overflow-y: auto; padding: 2px 8px 2px 2px; scrollbar-width: thin; scrollbar-color: var(--line) transparent; overscroll-behavior: contain; }
 /* wide: two columns, side by side */
 @media (min-width: 1000px) {
   html[data-hud="on"] .stage { grid-template-columns: minmax(360px, 1fr) minmax(520px, 1.2fr); gap: 18px; justify-items: stretch; width: min(1500px, 100%); margin-inline: auto; }
@@ -557,7 +575,7 @@ html.rt-on input { cursor: text; }
 .gactions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .gmail { width: auto; flex-direction: row; align-items: center; min-height: 44px; padding: 0 14px; color: var(--accent2); border: 1px solid var(--accent2); border-radius: 6px; background: color-mix(in srgb, var(--accent2) 10%, var(--panel)); } /* explicit background: the browser's own button grey failed contrast in the dark theme */
 .gmail:hover, .gmail:focus-visible { color: var(--bg); background: var(--accent2); }
-.toast { position: fixed; left: 50%; bottom: 24px; z-index: 90; max-width: min(92vw, 520px); padding: 10px 16px; font-size: 13px; color: var(--fg); background: var(--panel); border: 1px solid var(--accent); border-radius: 8px; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5); transform: translate(-50%, 12px); opacity: 0; pointer-events: none; transition: opacity 0.18s, transform 0.18s; }
+.toast { position: fixed; left: 50%; bottom: calc(24px + var(--dock-h, 0px)); z-index: 90; max-width: min(92vw, 520px); padding: 10px 16px; font-size: 13px; color: var(--fg); background: var(--panel); border: 1px solid var(--accent); border-radius: 8px; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5); transform: translate(-50%, 12px); opacity: 0; pointer-events: none; transition: opacity 0.18s, transform 0.18s; }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 @media print { .toast { display: none; } }
 

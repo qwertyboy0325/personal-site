@@ -133,4 +133,5 @@ test('guard: reserves the split-screen layout before first paint (no jump when t
   assert.equal(boot({ stored: 'off' }).root.dataset.hud, 'off', 'a saved "off" is respected');
   assert.equal(boot({ stored: 'banana' }).root.dataset.hud, 'on', 'anything else means on, like main.js');
   assert.equal(boot({ storageThrows: true }).root.dataset.hud, 'on', 'blocked storage does not break it');
+  assert.equal(boot().root.dataset.dock, 'on', 'space for the dock is reserved too');
 });

@@ -234,12 +234,12 @@ try {
   await mouse('mouseMoved', 520, 310);
   await sleep(600);
   check(Number(await ev(`getComputedStyle(document.querySelector('#reticle .rt-label')).opacity`)) > 0.9, 'and comes back as soon as it moves');
-  // Lock on to a quick-command chip.
-  const chip = await ev(`(() => { const r = document.querySelector('.chip[data-cmd="projects"]').getBoundingClientRect(); return [Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2)]; })()`);
+  // Lock on to a dock item.
+  const chip = await ev(`(() => { const r = document.querySelector('.dock-item[data-cmd="projects"]').getBoundingClientRect(); return [Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2)]; })()`);
   await mouse('mouseMoved', chip[0], chip[1]);
   await until(() => ev(`document.getElementById('reticle').classList.contains('rt-lock')`), 2000, 'lock on chip');
   check((await ev(`document.querySelector('#reticle .rt-tgt').textContent`)) === 'LOCK ▸ projects', 'locks on and names the target');
-  check((await ev(`getComputedStyle(document.querySelector('.chip')).cursor`)).includes('cursor-hot.svg'), 'hot cursor over clickable things');
+  check((await ev(`getComputedStyle(document.querySelector('.dock-item')).cursor`)).includes('cursor-hot.svg'), 'hot cursor over clickable things');
   await shot('11-reticle-lock', 450);
   await sleep(1800); // a locked target keeps its label even while the pointer rests
   check(Number(await ev(`getComputedStyle(document.querySelector('#reticle .rt-label')).opacity`)) > 0.9, 'a locked target keeps its label visible at rest');
@@ -744,6 +744,91 @@ try {
   await viewport(1440, 900);
   await load('about:blank'); await load(BASE); await bootDone();
 
+  console.log('dock navigation (wide screens with a mouse)');
+  await viewport(1440, 900);
+  await load('about:blank'); await load(BASE); await bootDone();
+  const dockInfo = () => ev(`(() => { const d = document.getElementById('dock'); const r = d.getBoundingClientRect(); const w = document.getElementById('window').getBoundingClientRect(); const g = document.getElementById('gui').getBoundingClientRect(); return { shown: getComputedStyle(d).display !== 'none', items: [...d.querySelectorAll('.dock-item')].map((i) => [i.dataset.cmd, i.querySelector('.dock-lbl').textContent, i.getAttribute('aria-current')]), top: Math.round(r.top), bottom: Math.round(r.bottom), left: Math.round(r.left), right: Math.round(r.right), winBottom: Math.round(w.bottom), guiBottom: Math.round(g.bottom), chips: getComputedStyle(document.getElementById('chips')).display, doc: document.documentElement.scrollWidth, vw: innerWidth, docH: document.documentElement.scrollHeight, ih: innerHeight, label: d.getAttribute('aria-label') }; })()`);
+  const dk = await dockInfo();
+  check(dk.shown && dk.items.length === 7 && dk.items.map((i) => i[0]).join() === 'about,projects,works,gallery,skills,contact,help', 'the dock shows seven commands, with their names as labels', JSON.stringify(dk.items));
+  check(dk.items.every((i) => i[0] === i[1]) && dk.label === 'Quick commands', 'each visible label is the command it runs');
+  check(dk.chips === 'none', 'the plain quick-command buttons are replaced by the dock on wide screens');
+  check(Math.abs((dk.left + dk.right) / 2 - 720) <= 1 && dk.bottom <= 900 && dk.bottom >= 880, 'it floats at the bottom centre of the screen', JSON.stringify(dk));
+  check(dk.winBottom <= dk.top && dk.guiBottom <= dk.top, 'it does not cover the terminal or the overview', JSON.stringify({ win: dk.winBottom, gui: dk.guiBottom, top: dk.top }));
+  check(dk.doc <= dk.vw && dk.docH <= dk.ih + 1, 'it does not make the page scroll');
+  const rects = await ev(`[...document.querySelectorAll('.dock-item')].map((i) => { const r = i.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.right), Math.round(r.width), Math.round(r.height)]; })`);
+  check(rects.every((r) => r[2] >= 44 && r[3] >= 44) && rects.every((r, i) => i === 0 || r[0] >= rects[i - 1][1]), 'icons are touch-sized and do not overlap at rest', JSON.stringify(rects));
+  // Click: runs the command, marks the section, URL hash follows.
+  const dockCentre = (cmd) => ev(`(() => { const r = document.querySelector('.dock-item[data-cmd="${cmd}"]').getBoundingClientRect(); return [Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2)]; })()`);
+  const [cx, cy] = await dockCentre('skills');
+  await mouse('mouseMoved', cx, cy);
+  await sleep(250);
+  const swell = await ev(`[...document.querySelectorAll('.dock-item')].map((i) => Number(i.getBoundingClientRect().height / 56).toFixed(2))`);
+  const iSk = 4;
+  check(Number(swell[iSk]) >= 1.25 && Number(swell[iSk - 1]) > 1.05 && Number(swell[iSk - 1]) < Number(swell[iSk]) && Number(swell[0]) <= 1.01, 'the icon under the mouse swells and its neighbours follow, far ones stay put', JSON.stringify(swell));
+  await shot('26-dock-hover', 100);
+  await mouse('mousePressed', cx, cy, { button: 'left', buttons: 1, clickCount: 1 });
+  await mouse('mouseReleased', cx, cy, { button: 'left', buttons: 0, clickCount: 1 });
+  await until(async () => (await logText()).includes('What I fix'), 3000, 'skills ran');
+  check((await ev(`location.hash`)) === '#skills' && (await dockInfo()).items.filter((i) => i[2] === 'true').map((i) => i[0]).join() === 'skills', 'clicking runs the command, updates the URL and marks the current section');
+  await mouse('mouseMoved', 700, 300);
+  await sleep(300);
+  const rest = await ev(`[...document.querySelectorAll('.dock-item')].map((i) => Number(i.getBoundingClientRect().height / 56).toFixed(2))`);
+  check(rest.every((v) => Number(v) <= 1.01), 'when the mouse leaves the dock the icons settle back', JSON.stringify(rest));
+  await typeText('work 2'); await enter(); await sleep(300);
+  check((await dockInfo()).items.filter((i) => i[2] === 'true').map((i) => i[0]).join() === 'works', 'typing a command updates the dock too (work 2 -> works)');
+  await typeText('theme light'); await enter(); await sleep(700);
+  check((await dockInfo()).items.filter((i) => i[2] === 'true').map((i) => i[0]).join() === 'works', 'commands that are not sections leave it alone');
+  await typeText('theme dark'); await enter(); await sleep(700);
+  // Keyboard: reachable with Tab, visible focus, Enter runs it.
+  await ev(`document.querySelector('.dock-item[data-cmd="contact"]').focus()`);
+  const kf = await ev(`(() => { const i = document.querySelector('.dock-item[data-cmd="contact"]'); const cs = getComputedStyle(i); return { focusVisible: i.matches(':focus-visible'), scale: i.getBoundingClientRect().height / 56, border: cs.borderTopColor }; })()`);
+  await sleep(200);
+  const kf2 = await ev(`document.querySelector('.dock-item[data-cmd="contact"]').getBoundingClientRect().height / 56`);
+  check(kf2 >= 1.15, 'a focused icon is enlarged too, for keyboard users', JSON.stringify({ kf, kf2 }));
+  await key('Enter', 'Enter', 13, '\r');
+  await until(async () => (await logText()).includes('github.com/qwertyboy0325'), 3000, 'contact via keyboard');
+  check(true, 'Enter on a focused dock icon runs the command');
+  // Contrast of the label and the icon on the dock background, in every theme.
+  for (const theme of ['dark', 'light', 'amber', 'matrix']) {
+    await typeText(`theme ${theme}`); await enter(); await sleep(700);
+    const cr = await ev(`(() => { const lum = (c) => { const m = c.match(/[\\d.]+/g).map(Number).slice(0, 3).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * m[0] + 0.7152 * m[1] + 0.0722 * m[2]; }; const bar = getComputedStyle(document.querySelector('.bar')).backgroundColor; const ratio = (el) => { const a = lum(getComputedStyle(el).color); const b = lum(bar); return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05); }; return { label: ratio(document.querySelector('.dock-lbl')), icon: ratio(document.querySelector('.dock-ico')) }; })()`);
+    check(cr.label >= 4.5 && cr.icon >= 4.5, `dock label and icon have AA contrast in the ${theme} theme`, JSON.stringify(cr));
+  }
+  await shot('26-dock', 300);
+  // Language: labels stay the command names, the group name is translated.
+  await typeText('lang zh'); await enter(); await sleep(900);
+  const dz = await dockInfo();
+  check(dz.label === '快速指令' && dz.items.every((i) => i[0] === i[1]), 'in Chinese the group is named in Chinese and the labels stay the commands');
+  await typeText('lang en'); await enter(); await sleep(900);
+  // The toast stays clear of the dock.
+  await ev(`document.querySelector('.gmail-top')?.click()`);
+  await sleep(500);
+  const toast = await ev(`(() => { const t = document.getElementById('toast').getBoundingClientRect(); const d = document.getElementById('dock').getBoundingClientRect(); return { toastBottom: Math.round(t.bottom), dockTop: Math.round(d.top) }; })()`);
+  check(toast.toastBottom <= toast.dockTop, 'the "copied" message appears above the dock, not on top of it', JSON.stringify(toast));
+  // Picture windows stay above the dock.
+  check((await ev(`Number(getComputedStyle(document.getElementById('dock')).zIndex) < 30`)), 'the dock sits below the floating picture windows');
+  // Narrow window / touch-like: no dock, the plain buttons come back.
+  await viewport(820, 1000);
+  await load('about:blank'); await load(BASE); await bootDone();
+  const nr = await dockInfo();
+  check(!nr.shown && nr.chips === 'flex', 'below 1000px the dock is gone and the quick-command buttons are back', JSON.stringify({ shown: nr.shown, chips: nr.chips }));
+  await viewport(390, 800, true);
+  await ev(`localStorage.clear()`);
+  await load('about:blank'); await load(BASE); await bootDone();
+  const ph = await dockInfo();
+  check(!ph.shown && ph.doc <= ph.vw, 'on a phone there is no dock and nothing scrolls sideways');
+  // Reduced motion: no swelling.
+  await viewport(1440, 900);
+  await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }, { name: 'prefers-reduced-motion', value: 'reduce' }] });
+  await load('about:blank'); await load(BASE); await bootDone();
+  const [rx, ry] = await dockCentre('works');
+  await mouse('mouseMoved', rx, ry);
+  await sleep(300);
+  const calm = await ev(`[...document.querySelectorAll('.dock-item')].map((i) => Number(i.getBoundingClientRect().height / 56).toFixed(2))`);
+  check(calm.every((v) => Number(v) <= 1.01), 'with reduced motion the dock does not swell', JSON.stringify(calm));
+  await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }, { name: 'prefers-reduced-motion', value: 'no-preference' }] });
+  await load('about:blank'); await load(BASE); await bootDone();
+
   console.log('pictures in the overview');
   await ev(`document.querySelector('#gui .ggallery').scrollIntoView()`);
   await until(() => ev(`[...document.querySelectorAll('#gui .gthumb img')].every((i) => i.complete && i.naturalWidth > 0)`), 15000, 'thumbnails loaded');
@@ -801,9 +886,9 @@ try {
   await load('about:blank');
   await load(BASE);
   await bootDone();
-  await ev(`document.querySelector('.chip[data-cmd="works"]').click()`);
+  await ev(`document.querySelector('.dock-item[data-cmd="works"]').click()`);
   await until(async () => (await logText()).includes('Black hole renderer'), 3000, 'works list');
-  check((await ev(`location.hash`)) === '#works', 'the works chip lists the works and updates the URL hash');
+  check((await ev(`location.hash`)) === '#works', 'the works dock item lists the works and updates the URL hash');
   const listText = await logText();
   check(listText.includes('Visual and 3D') && listText.includes('Research and thinking') && listText.includes('Design'), 'works are grouped by kind');
   await ev(`document.querySelector('#log button[data-cmd="work 1"]').click()`);

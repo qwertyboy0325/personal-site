@@ -10,6 +10,7 @@ import { createReticle, CURSOR_MODES } from './fx/reticle.js';
 import { createHud } from './hud.js';
 import { createGui } from './gui.js';
 import { createLightbox } from './lightbox.js';
+import { createDock } from './dock.js';
 import { createWindows } from './windows.js';
 import { asciiFromImage } from './fx/imgascii.js';
 
@@ -19,6 +20,7 @@ const screen = $('screen');
 const form = $('prompt');
 const input = $('cmd');
 const chips = $('chips');
+const dockEl = $('dock');
 const win = $('window');
 
 const PS1 = `${profile.user}@${profile.host}:~$`;
@@ -85,6 +87,7 @@ const guiEl = $('gui');
 const tabs = $('tabs');
 const narrow = matchMedia('(max-width: 999.98px)');
 const gui = createGui({ root: guiEl });
+const dock = createDock({ root: dockEl, reduceMotion });
 gui.render(state.lang);
 const hud = createHud({ left: $('hud-left'), right: $('hud-right'), getState: () => ctx(), getPointer: () => reticle.pointer, reduceMotion });
 
@@ -269,6 +272,7 @@ function applyLang(lang, persist) {
   $('status').querySelector('.status-claims').textContent = t.status.claims;
   input.setAttribute('aria-label', t.inputLabel);
   chips.setAttribute('aria-label', t.chipsLabel);
+  dockEl.setAttribute('aria-label', t.chipsLabel);
   $('btn-theme').setAttribute('aria-label', t.themeButton);
   $('btn-theme').title = t.themeButton;
   // The accessible name must contain the visible text (WCAG 2.5.3 "Label in Name"), so voice control ("click EN") works.
@@ -322,6 +326,7 @@ function run(line, { record = true } = {}) {
     applyEffects(res.effects.filter((e) => e.type !== 'open'));
     if (!clearing) print([{ t: 'echo', v: trimmed }, ...res.blocks], { reveal: !wiping });
     gui.setActive(trimmed);
+    dock.setActive(trimmed);
     hud.refresh();
   };
   // Theme, language and clear swap state while the page is covered in glyphs.
@@ -412,6 +417,7 @@ log.addEventListener('click', (e) => {
   if (open) openPicture(Number(open.dataset.open) - 1, open);
 });
 chips.addEventListener('click', onCommandClick);
+dockEl.addEventListener('click', onCommandClick);
 guiEl.addEventListener('click', onCommandClick); // cards and the recent-commands list
 tabs.addEventListener('click', (e) => {
   const b = e.target.closest('[data-view]');
@@ -449,6 +455,7 @@ applyLang(state.lang, false);
 if (state.theme) applyTheme(state.theme, false);
 form.hidden = false;
 chips.hidden = false;
+dockEl.hidden = false;
 window.__siteReady = true; // tells src/guard.js the terminal is operable
 document.querySelector('.boot-fail')?.remove(); // it may have appeared on a very slow load
 $('btn-fx').hidden = false;
