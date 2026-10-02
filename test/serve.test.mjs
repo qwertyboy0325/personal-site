@@ -5,7 +5,7 @@ import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { readFile } from 'node:fs/promises';
-import { classifyChange, affectsPrerender, injectLiveReload, createDevServer, CLIENT_URL, EVENTS_URL, CLIENT_SCRIPT } from '../scripts/serve.mjs';
+import { classifyChange, affectsPrerender, injectLiveReload, createDevServer, parseRange, CLIENT_URL, EVENTS_URL, CLIENT_SCRIPT } from '../scripts/serve.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -170,4 +170,63 @@ test('the real index.html is untouched by the dev server (strict CSP stays on di
   const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
   assert.ok(!html.includes('__livereload'));
   assert.ok(!html.includes('connect-src'));
+});
+
+test('parseRange: the forms browsers send, and the ones that must be refused', () => {
+  assert.deepEqual(parseRange('bytes=0-99', 1000), { start: 0, end: 99 });
+  assert.deepEqual(parseRange('bytes=500-', 1000), { start: 500, end: 999 });
+  assert.deepEqual(parseRange('bytes=-200', 1000), { start: 800, end: 999 }, 'the last 200 bytes');
+  assert.deepEqual(parseRange('bytes=900-5000', 1000), { start: 900, end: 999 }, 'the end is clamped');
+  assert.deepEqual(parseRange('bytes=0-0', 1000), { start: 0, end: 0 });
+  assert.deepEqual(parseRange('bytes=-5000', 1000), { start: 0, end: 999 }, 'a suffix longer than the file is the whole file');
+  assert.equal(parseRange(undefined, 1000), null);
+  assert.equal(parseRange('', 1000), null);
+  for (const bad of ['bytes=1000-', 'bytes=5-2', 'bytes=-', 'bytes=-0', 'bytes=a-b', 'items=0-5', 'bytes=0-5,10-20', 'bytes=99999-100000']) {
+    assert.equal(parseRange(bad, 1000), 'invalid', bad);
+  }
+});
+
+test('Range requests: 206 with the right headers, 416 when impossible, 200 with Accept-Ranges otherwise', async () => {
+  await withServer({ livereload: false }, async ({ base, root }) => {
+    const bytes = Buffer.from(Array.from({ length: 300 }, (_, i) => i % 256));
+    await writeFile(join(root, 'clip.mp4'), bytes);
+    const full = await fetch(`${base}/clip.mp4`);
+    assert.equal(full.status, 200);
+    assert.equal(full.headers.get('accept-ranges'), 'bytes');
+    assert.equal(full.headers.get('content-type'), 'video/mp4');
+    assert.equal(Number(full.headers.get('content-length')), 300);
+    const part = await fetch(`${base}/clip.mp4`, { headers: { Range: 'bytes=10-19' } });
+    assert.equal(part.status, 206);
+    assert.equal(part.headers.get('content-range'), 'bytes 10-19/300');
+    assert.equal(Number(part.headers.get('content-length')), 10);
+    assert.deepEqual(Buffer.from(await part.arrayBuffer()), bytes.subarray(10, 20));
+    const tail = await fetch(`${base}/clip.mp4`, { headers: { Range: 'bytes=-5' } });
+    assert.deepEqual(Buffer.from(await tail.arrayBuffer()), bytes.subarray(295));
+    const bad = await fetch(`${base}/clip.mp4`, { headers: { Range: 'bytes=900-' } });
+    assert.equal(bad.status, 416);
+    assert.equal(bad.headers.get('content-range'), 'bytes */300');
+  });
+});
+
+test('media types: images and video are served with the right Content-Type', async () => {
+  await withServer({ livereload: false }, async ({ base, root }) => {
+    for (const [name, type] of [['a.jpg', 'image/jpeg'], ['a.png', 'image/png'], ['a.gif', 'image/gif'], ['a.webp', 'image/webp'], ['a.mp4', 'video/mp4'], ['a.webm', 'video/webm'], ['a.svg', 'image/svg+xml']]) {
+      await writeFile(join(root, name), 'x');
+      assert.equal((await fetch(`${base}/${name}`)).headers.get('content-type'), type, name);
+    }
+  });
+});
+
+test('Content-Length counts BYTES, not characters: injected HTML with non-ASCII text is not truncated', async () => {
+  await withServer({}, async ({ base, root }) => {
+    const html = PAGE.replace('<main>hi</main>', '<main>你好 — Ezra Wu · 黑洞渲染器 · café ✓</main>');
+    await writeFile(join(root, 'index.html'), html);
+    const res = await fetch(`${base}/`);
+    const buf = Buffer.from(await res.arrayBuffer());
+    assert.equal(Number(res.headers.get('content-length')), buf.length, 'header matches what was actually sent');
+    const text = buf.toString('utf8');
+    assert.ok(text.includes('你好 — Ezra Wu · 黑洞渲染器 · café ✓'));
+    assert.ok(text.trimEnd().endsWith('</body></html>') || text.includes(CLIENT_URL), 'the injected reload script is still there');
+    assert.ok(text.includes(`<script src="${CLIENT_URL}"></script>`));
+  });
 });

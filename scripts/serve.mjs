@@ -24,7 +24,40 @@ const TYPES = {
   '.svg': 'image/svg+xml',
   '.txt': 'text/plain; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.avif': 'image/avif',
+  '.ico': 'image/x-icon',
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
 };
+
+/**
+ * Parse an HTTP Range header ("bytes=0-99", "bytes=500-", "bytes=-200") against a
+ * file of `size` bytes. Returns { start, end } (inclusive), null for "no range",
+ * or 'invalid' (answer 416). Safari will not play <video> without this.
+ */
+export function parseRange(header, size) {
+  if (!header) return null;
+  const m = /^bytes=(\d*)-(\d*)$/.exec(String(header).trim());
+  if (!m || (m[1] === '' && m[2] === '')) return 'invalid';
+  let start;
+  let end;
+  if (m[1] === '') {
+    const n = Number(m[2]);
+    if (n === 0) return 'invalid';
+    start = Math.max(0, size - n);
+    end = size - 1;
+  } else {
+    start = Number(m[1]);
+    end = m[2] === '' ? size - 1 : Math.min(Number(m[2]), size - 1);
+  }
+  if (!(start <= end) || start >= size) return 'invalid';
+  return { start, end };
+}
 
 const IGNORED = /(^|\/)(\.git|node_modules|\.shots|test|scripts|\.DS_Store)(\/|$)/;
 const PRERENDER_INPUTS = /^src\/(content|engine|render)\.js$|^src\/fx\/(face|rain)\.js$/;
@@ -101,8 +134,20 @@ export function createDevServer({ root, livereload = true, log = () => {} }) {
       if (!(await stat(file)).isFile()) throw Object.assign(new Error('nf'), { code: 'ENOENT' });
       const type = TYPES[extname(file)] ?? 'application/octet-stream';
       let body = await readFile(file);
-      if (livereload && type.startsWith('text/html')) body = injectLiveReload(body.toString('utf8'));
-      res.writeHead(200, { 'Content-Type': type, 'Cache-Control': 'no-store' });
+      // Always a Buffer: Content-Length and Range are measured in BYTES (a string's length counts characters).
+      if (livereload && type.startsWith('text/html')) body = Buffer.from(injectLiveReload(body.toString('utf8')), 'utf8');
+      const range = parseRange(req.headers.range, body.length);
+      if (range === 'invalid') {
+        res.writeHead(416, { 'Content-Range': `bytes */${body.length}`, 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end('Range not satisfiable');
+        return;
+      }
+      if (range) {
+        res.writeHead(206, { 'Content-Type': type, 'Cache-Control': 'no-store', 'Accept-Ranges': 'bytes', 'Content-Range': `bytes ${range.start}-${range.end}/${body.length}`, 'Content-Length': range.end - range.start + 1 });
+        res.end(body.subarray(range.start, range.end + 1));
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': type, 'Cache-Control': 'no-store', 'Accept-Ranges': 'bytes', 'Content-Length': body.length });
       res.end(body);
     } catch (e) {
       res.writeHead(e.code === 'EFORBIDDEN' ? 403 : 404, { 'Content-Type': 'text/plain; charset=utf-8' });
