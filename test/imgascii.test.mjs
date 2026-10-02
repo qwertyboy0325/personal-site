@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { imageToAscii, IMG_RAMP, asciiColumns } from '../src/fx/imgascii.js';
+import { imageToAscii, IMG_RAMP, asciiColumns, createAsciiCache } from '../src/fx/imgascii.js';
 
 /** Build an RGBA image from a function (x, y) -> [r, g, b, a]. */
 function make(width, height, fn) {
@@ -152,4 +152,30 @@ test('clip ignores a few glare cells so they do not wash out the rest', () => {
   const used = (rows) => new Set(rows.join('')).size;
   assert.ok(used(clipped) >= used(plain), `${used(clipped)} vs ${used(plain)} characters in use`);
   assert.ok(levelOf(clipped[clipped.length - 1][Math.min(40, clipped[clipped.length - 1].length - 1)]) > levelOf(plain[plain.length - 1][Math.min(40, plain[plain.length - 1].length - 1)]), 'the picture itself uses more of the range');
+});
+
+test('gamma: below 1 lifts the shadows, above 1 deepens them, 1 changes nothing, odd values are ignored', () => {
+  const img = make(120, 20, (x) => grey(Math.round((x / 119) * 255)));
+  const mean = (g) => { const row = lines(imageToAscii(img, { cols: 30, gamma: g }))[0].padEnd(30, ' '); return [...row].reduce((a, ch) => a + levelOf(ch), 0) / row.length; };
+  assert.ok(mean(0.6) > mean(1) && mean(1) > mean(1.8), `${mean(0.6)} > ${mean(1)} > ${mean(1.8)}`);
+  assert.equal(imageToAscii(img, { cols: 30, gamma: 1 }), imageToAscii(img, { cols: 30 }));
+  for (const bad of [0, -2, NaN, 'x', undefined, Infinity]) assert.equal(imageToAscii(img, { cols: 30, gamma: bad }).includes('NaN'), false, String(bad));
+});
+
+test('createAsciiCache: remembers finished pictures, forgets the least recently used, keys by picture, width and theme', () => {
+  const c = createAsciiCache(3);
+  assert.notEqual(c.key('a', 100, false), c.key('a', 100, true));
+  assert.notEqual(c.key('a', 100, false), c.key('a', 99, false));
+  assert.notEqual(c.key('a', 100, false), c.key('b', 100, false));
+  assert.equal(c.get('x'), undefined);
+  c.set('1', 'one'); c.set('2', 'two'); c.set('3', 'three');
+  assert.equal(c.get('1'), 'one'); // 1 is now the most recent, so 2 is next to go
+  c.set('4', 'four');
+  assert.deepEqual([c.has('1'), c.has('2'), c.has('3'), c.has('4')], [true, false, true, true]);
+  assert.equal(c.size, 3);
+  c.set('4', 'FOUR'); // replacing does not grow it
+  assert.equal(c.get('4'), 'FOUR');
+  assert.equal(c.size, 3);
+  assert.equal(c.get('3'), 'three');
+  assert.equal(createAsciiCache().size, 0);
 });

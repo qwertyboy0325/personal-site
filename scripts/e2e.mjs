@@ -1285,6 +1285,42 @@ try {
   const rp = await ev(`(() => ({ cards: document.querySelectorAll('#gui .gphotos [data-cmd]').length, bad: [...document.querySelectorAll('#gui .gphotos img')].filter((i) => i.getAttribute('width') !== String(i.naturalWidth) || i.getAttribute('height') !== String(i.naturalHeight)).length, doc: document.documentElement.scrollWidth, vw: innerWidth }))()`);
   check(rp.cards === 12 && rp.bad === 0 && rp.doc <= rp.vw, 'the overview shows twelve photo cards with exact declared sizes', JSON.stringify(rp));
   await shot('28-photos-overview', 300);
+  // Worked out ahead of time: once the thumbnails are on screen and the browser is idle, opening a picture needs no pictures at all.
+  await ev(`document.querySelector('#g-photos').scrollIntoView()`);
+  await until(() => ev(`[...document.querySelectorAll('#gui .gphotos img')].every((i) => i.complete && i.naturalWidth > 0)`), 20000, 'thumbnails for precompute');
+  await sleep(2500); // the precompute starts shortly after and runs in idle time
+  await send('Network.setCacheDisabled', { cacheDisabled: true });
+  await send('Fetch.enable', { patterns: [{ urlPattern: '*assets/gallery/photo-*.jpg', requestStage: 'Request' }] });
+  const heldPictures = [];
+  const hold = (m) => { const j = JSON.parse(m.data); if (j.method === 'Fetch.requestPaused') { heldPictures.push(j.params.request.url); setTimeout(() => send('Fetch.continueRequest', { requestId: j.params.requestId }).catch(() => {}), 4000); } };
+  ws.addEventListener('message', hold);
+  await typeText('view 7'); await enter();
+  const tAhead = Date.now();
+  await until(() => ev(`(() => { const p = document.querySelector('#log .shot-ascii'); return !!p && !p.hidden && p.textContent.length > 100; })()`), 1500, 'letters from the precomputed result');
+  check(Date.now() - tAhead < 800 && !(await ev(`(() => { const i = document.querySelector('#log .shot-img'); return i.complete && i.naturalWidth > 0; })()`)), 'a picture whose letters were worked out ahead of time shows them even while every picture request is held up', JSON.stringify({ ms: Date.now() - tAhead, held: heldPictures.map((u) => u.split('/').pop()) }));
+  await until(() => ev(`document.querySelector('#log .shot-ascii').hidden`), 9000, 'held pictures arrive');
+  ws.removeEventListener('message', hold);
+  await send('Fetch.disable');
+  await send('Network.setCacheDisabled', { cacheDisabled: false });
+  // A slow connection: the full-size photo takes 2.5 s to arrive. The letters must not wait for it (they come from the small version),
+  // and the picture must not be swapped in before it has arrived.
+  await send('Network.setCacheDisabled', { cacheDisabled: true });
+  await send('Fetch.enable', { patterns: [{ urlPattern: '*assets/gallery/photo-looking-back.jpg', requestStage: 'Request' }] });
+  const slowRequests = [];
+  const onPaused = (m) => { const j = JSON.parse(m.data); if (j.method === 'Fetch.requestPaused') { slowRequests.push(Date.now()); setTimeout(() => send('Fetch.continueRequest', { requestId: j.params.requestId }).catch(() => {}), 2500); } };
+  ws.addEventListener('message', onPaused);
+  const tSlow = Date.now();
+  await typeText('view 6'); await enter();
+  await until(() => ev(`(() => { const p = document.querySelector('#log .shot-ascii'); return !!p && !p.hidden && p.textContent.length > 100; })()`), 1500, 'letters appear while the photo is still downloading');
+  const early = await ev(`(() => { const i = document.querySelector('#log .shot-img'); return { loaded: i.complete && i.naturalWidth > 0, asciiVisible: !document.querySelector('#log .shot-ascii').hidden }; })()`);
+  check(early.asciiVisible && !early.loaded && Date.now() - tSlow < 2000, 'the letters appear at once, before the full photo has downloaded', JSON.stringify({ early, ms: Date.now() - tSlow }));
+  await sleep(1300); // longer than the pause on the letters (0.8 s): the photo is still on its way
+  check(await ev(`!document.querySelector('#log .shot-ascii').hidden && document.querySelector('#log figure.shot').classList.contains('is-ascii')`), 'the letters stay until the photo has arrived (no swapping to an empty picture)');
+  await until(() => ev(`document.querySelector('#log .shot-ascii').hidden`), 8000, 'reveal after arrival');
+  check((await ev(`(() => { const i = document.querySelector('#log .shot-img'); return i.complete && i.naturalWidth === 1600; })()`)) && slowRequests.length >= 1, 'then the full photo is shown, fully loaded');
+  ws.removeEventListener('message', onPaused);
+  await send('Fetch.disable');
+  await send('Network.setCacheDisabled', { cacheDisabled: false });
   await typeText('view 6'); await enter();
   await until(() => ev(`!!document.querySelector('#log figure.shot .exif')`), 3000, 'real photo figure');
   check((await ev(`document.querySelector('#log figure.shot .exif').textContent`)) === 'NIKON Z 6 · NIKKOR Z 35mm f/1.8 S · 35 mm · f/1.8 · 1/3200 s · ISO 100', 'a real photo shows its camera, lens and settings');

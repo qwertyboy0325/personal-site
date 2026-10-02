@@ -26,9 +26,10 @@ export function asciiColumns(widthPx, { cell = 7, min = 40, max = 110 } = {}) {
  * @param {number} [o.cellAspect=0.5] width / height of one character cell
  * @param {boolean} [o.stretch=true]  stretch the contrast so flat images still show detail
  * @param {number} [o.detail=0]       0..2: sharpen by this much (a character is compared with its neighbours, so outlines and faces stand out)
+ * @param {number} [o.gamma=1]        brightness curve after stretching: below 1 lifts the shadows, above 1 deepens them
  * @param {number} [o.clip=0]         0..0.2: ignore this share of the darkest and brightest cells when stretching (one glare spot must not wash out the picture)
  */
-export function imageToAscii(px, { cols = 64, ramp = IMG_RAMP, invert = false, cellAspect = 0.5, stretch = true, detail = 0, clip = 0 } = {}) {
+export function imageToAscii(px, { cols = 64, ramp = IMG_RAMP, invert = false, cellAspect = 0.5, stretch = true, detail = 0, clip = 0, gamma = 1 } = {}) {
   const { data, width, height } = px ?? {};
   if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1) throw new RangeError('image needs a positive integer width and height');
   if (!data || data.length < width * height * 4) throw new RangeError('pixel data is shorter than width x height x 4');
@@ -101,11 +102,13 @@ export function imageToAscii(px, { cols = 64, ramp = IMG_RAMP, invert = false, c
   const span = hi - lo;
   const flat = stretch && span < 1e-9; // one solid colour: there is nothing to stretch, so use its real brightness
 
+  const g = Number.isFinite(gamma) && gamma > 0 ? clamp(gamma, 0.3, 3) : 1;
   const lines = [];
   for (let cy = 0; cy < r; cy++) {
     let line = '';
     for (let cx = 0; cx < c; cx++) {
-      const v = flat ? lum[cy * c + cx] : (lum[cy * c + cx] - lo) / (span || 1);
+      let v = flat ? lum[cy * c + cx] : (lum[cy * c + cx] - lo) / (span || 1);
+      if (g !== 1 && v > 0) v = clamp(v, 0, 1) ** g;
       const level = clamp(Math.round((Number.isFinite(v) ? v : 0) * (n - 1)), 0, n - 1);
       line += ramp[invert ? n - 1 - level : level];
     }
@@ -125,5 +128,27 @@ export function asciiFromImage(img, o = {}) {
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   ctx.drawImage(img, 0, 0, w, h);
   const { data } = ctx.getImageData(0, 0, w, h);
-  return imageToAscii({ data, width: w, height: h }, { detail: 0.9, clip: 0.02, ...o });
+  return imageToAscii({ data, width: w, height: h }, { detail: 1.6, clip: 0.03, ...o });
+}
+
+/** A small least-recently-used cache for finished pictures-in-letters (key: picture, columns, theme). */
+export function createAsciiCache(limit = 48) {
+  const map = new Map();
+  return {
+    key: (slug, cols, invert) => `${slug}|${cols}|${invert ? 1 : 0}`,
+    get(key) {
+      if (!map.has(key)) return undefined;
+      const value = map.get(key);
+      map.delete(key);
+      map.set(key, value); // now the most recently used
+      return value;
+    },
+    set(key, value) {
+      map.delete(key);
+      map.set(key, value);
+      while (map.size > limit) map.delete(map.keys().next().value);
+    },
+    has: (key) => map.has(key),
+    get size() { return map.size; },
+  };
 }

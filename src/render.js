@@ -68,7 +68,7 @@ export function block(b, o = DEFAULTS) {
     case 'image': {
       // A picture or video poster. main.js draws it as ASCII first, then dissolves into this image.
       const video = b.kind === 'video';
-      return `<figure class="shot" data-image data-kind="${esc(b.kind)}" data-open="${esc(b.index)}">`
+      return `<figure class="shot" data-image data-kind="${esc(b.kind)}" data-open="${esc(b.index)}"${b.thumb ? ` data-thumb="${esc(b.thumb)}"` : ''}>`
         + `<button type="button" class="shot-open" data-open="${esc(b.index)}" aria-label="${esc(b.open ?? 'Open larger')}: ${esc(b.title)}">`
         + '<pre class="shot-ascii" aria-hidden="true" hidden></pre>'
         + `<img class="shot-img" src="${esc(b.poster ?? b.src)}" width="${esc(b.width)}" height="${esc(b.height)}" alt="${esc(b.alt)}" decoding="async">`

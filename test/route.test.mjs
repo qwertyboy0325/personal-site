@@ -169,3 +169,13 @@ test('main.js: pages replace each other, push history entries, and answer Back /
   assert.match(src, /store\.set\('mode', fx\.value\)/);
   assert.match(src, /closest\('\.shot-open, \.sheet-open'\)/, 'thumbnails on a sheet open the viewer');
 });
+
+test('a picture on its own page carries its small version, so the letters can start before the full picture arrives', () => {
+  const g = gallery.find(isPhoto);
+  const block = execute(`view ${g.slug}`, ctx()).blocks.find((b) => b.t === 'image');
+  assert.equal(block.thumb, g.thumb);
+  const html = renderEntry([block], {});
+  assert.ok(html.includes(`data-thumb="${g.thumb}"`));
+  assert.ok(renderEntry([{ ...block, thumb: undefined }], {}).includes('data-image'), 'a missing thumbnail is tolerated');
+  assert.ok(!renderEntry([{ ...block, thumb: undefined }], {}).includes('data-thumb'));
+});

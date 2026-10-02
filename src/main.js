@@ -1,7 +1,7 @@
 import { execute, complete, welcomeBlocks, bootLines, LAYOUT_MODES } from './engine.js';
 import { routeFor, lineForHash, crumbsFor, documentTitle } from './route.js';
 import { renderEntry, esc } from './render.js';
-import { THEMES, LANGS, ui, profile } from './content.js';
+import { THEMES, LANGS, ui, profile, gallery } from './content.js';
 import { createFx, FX_MODES } from './fx/fx.js';
 import { startFace } from './fx/face.js';
 import { startAscii3d } from './fx/ascii3d.js';
@@ -13,7 +13,7 @@ import { createGui } from './gui.js';
 import { createLightbox } from './lightbox.js';
 import { createDock } from './dock.js';
 import { createWindows } from './windows.js';
-import { asciiFromImage, asciiColumns } from './fx/imgascii.js';
+import { asciiFromImage, asciiColumns, createAsciiCache } from './fx/imgascii.js';
 
 const $ = (id) => document.getElementById(id);
 const log = $('log');
@@ -202,31 +202,92 @@ function startNewFaces() {
   }
 }
 
-const ASCII_HOLD_MS = 1000;
+const ASCII_HOLD_MS = 800;
 
 /** A picture first appears as ASCII art made from its own pixels, then dissolves into the real image. */
+/** The small version of a picture, decoded; null if it cannot be loaded (the caller then falls back to the full picture). */
+async function smallPicture(url) {
+  if (!url) return null;
+  try {
+    const img = new Image();
+    img.decoding = 'async';
+    img.src = url;
+    await img.decode();
+    return img;
+  } catch {
+    return null;
+  }
+}
+
+// Pictures-in-letters are worked out ahead of time: once the page has loaded, and the browser has nothing better to do, every
+// thumbnail that is already on screen is converted, so opening a picture only has to show the result.
+const asciiCache = createAsciiCache();
+const pictureWidth = () => Math.min(720, log.clientWidth || 480); // how wide a picture is on its own page (see .shot in the stylesheet)
+
+function lettersFor(slug, source, cols, invert) {
+  const key = asciiCache.key(slug, cols, invert);
+  let text = asciiCache.get(key);
+  if (text === undefined) {
+    text = asciiFromImage(source, { cols, invert });
+    asciiCache.set(key, text);
+  }
+  return text;
+}
+
+let precomputeTimer = 0;
+function precomputeLetters() {
+  clearTimeout(precomputeTimer);
+  const cols = asciiColumns(pictureWidth());
+  const invert = ctx().theme === 'light';
+  const todo = [];
+  for (const img of document.querySelectorAll('.gthumb img, .sheet-img')) {
+    const index = Number((img.closest('[data-cmd^="view "]') ?? img.closest('.sheet-item')?.querySelector('[data-cmd^="view "]'))?.dataset.cmd?.split(' ')[1]);
+    const g = gallery[index - 1];
+    if (g && g.kind !== 'video' && img.complete && img.naturalWidth > 0 && !asciiCache.has(asciiCache.key(g.slug, cols, invert))) todo.push([g.slug, img]);
+  }
+  const step = () => {
+    const job = todo.shift();
+    if (!job) return;
+    try { lettersFor(job[0], job[1], cols, invert); } catch { /* the picture will be converted when it is opened */ }
+    if (todo.length) (window.requestIdleCallback ?? ((f) => setTimeout(f, 50)))(step);
+  };
+  (window.requestIdleCallback ?? ((f) => setTimeout(f, 200)))(step);
+}
+const schedulePrecompute = () => { clearTimeout(precomputeTimer); precomputeTimer = setTimeout(precomputeLetters, 600); };
+
 async function animateImage(fig) {
   const img = fig.querySelector('.shot-img');
   const pre = fig.querySelector('.shot-ascii');
   if (!img || !pre || reduceMotion || state.transition === 'off') return; // the real image is already showing
+  fig.classList.add('is-ascii'); // hide the real image (it keeps its space, so nothing jumps)
+  const fullReady = img.decode().catch(() => {}); // the full picture keeps loading while the letters show
   try {
-    fig.classList.add('is-ascii'); // hide the real image (it keeps its space, so nothing jumps)
-    await img.decode();
-    const box = img.getBoundingClientRect();
+    // The letters never wait for the full picture to download: they are worked out ahead of time (see precomputeLetters), or
+    // from whatever is already here, or from the small version (a few KB) as a last resort.
+    const index = Number(fig.dataset.open);
+    const slug = gallery[index - 1]?.slug ?? fig.dataset.thumb;
+    const fullHere = img.complete && img.naturalWidth > 0; // already in the cache: use the real picture, no need for the small one
+    const early = fullHere ? img : null;
+    const box = img.getBoundingClientRect(); // the reserved box: width and height are declared, so it is final already
     const cols = asciiColumns(box.width); // denser for bigger pictures, but always clearly letters
-    const text = asciiFromImage(img, { cols, invert: ctx().theme === 'light' });
+    const family = getComputedStyle(pre).fontFamily;
+    const invert = ctx().theme === 'light';
+    // Worked out already? Use that. Otherwise convert now, from the real picture if it is here, else from the small version.
+    const source = asciiCache.has(asciiCache.key(slug, cols, invert)) ? null : (early ?? (await smallPicture(fig.dataset.thumb)) ?? (await fullReady, img));
+    const text = lettersFor(slug, source, cols, invert);
     pre.textContent = text;
     // Size the text so `cols` characters span the image exactly, using this font's real character width.
     const probe = document.createElement('canvas').getContext('2d');
-    probe.font = `100px ${getComputedStyle(pre).fontFamily}`;
+    probe.font = `100px ${family}`;
     const charWidth = (probe.measureText('M').width || 60) / 100; // as a fraction of the font size
     pre.style.fontSize = `${box.width / (cols * charWidth)}px`;
     pre.style.lineHeight = `${box.height / text.split('\n').length}px`;
     pre.hidden = false;
     await new Promise((r) => setTimeout(r, ASCII_HOLD_MS));
   } catch {
-    // decoding or reading pixels failed: just show the real image
+    // reading pixels failed: just show the real image
   }
+  await fullReady; // never swap to a picture that has not arrived yet
   pre.hidden = true;
   fig.classList.remove('is-ascii');
   trans.revealEntry(fig.querySelector('.shot-open') ?? fig); // dissolve only over the picture itself, never the whole entry
@@ -257,6 +318,7 @@ function print(blocks, { reveal = true, top = false } = {}) {
   startNewFaces();
   startNewModels();
   startNewImages();
+  if (blocks.some((b) => b.t === 'sheet')) schedulePrecompute(); // a contact sheet brought new thumbnails
   if (top) screen.scrollTop = 0; // a new page starts at its top; output appended to a log follows the end
   else scrollToEnd();
   // Entries with a picture run their own ASCII-to-image reveal instead of the generic overlay.
@@ -558,6 +620,8 @@ if (profile.email) {
   for (const b of [$('btn-mail'), $('tab-mail')]) { b.dataset.copy = profile.email; b.hidden = false; }
 }
 reticle.setMode(state.reticle);
+if (document.readyState === 'complete') schedulePrecompute();
+else addEventListener('load', schedulePrecompute, { once: true });
 setView('term');
 applyHud(state.hud === 'on');
 hud.refresh();

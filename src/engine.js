@@ -166,7 +166,7 @@ function viewBlocks(g, index, ctx) {
   const t = T(ctx);
   const c = g[ctx.lang];
   const out = [
-    { t: 'image', index: index + 1, slug: g.slug, kind: g.kind, src: g.src, poster: g.poster ?? null, width: g.width, height: g.height, alt: c.alt, title: c.title, caption: c.caption, shot: formatShot(g.shot), source: g.source ?? null, open: t.viewer.open },
+    { t: 'image', index: index + 1, slug: g.slug, kind: g.kind, src: g.src, thumb: g.thumb, poster: g.poster ?? null, width: g.width, height: g.height, alt: c.alt, title: c.title, caption: c.caption, shot: formatShot(g.shot), source: g.source ?? null, open: t.viewer.open },
   ];
   const wi = works.findIndex((w) => w.slug === g.work);
   if (wi >= 0) out.push(p({ dim: `${t.viewer.related}: ` }, { cmd: `work ${wi + 1}`, text: works[wi][ctx.lang].title }));
