@@ -583,6 +583,21 @@ html[data-hud] .crumbs[hidden] { display: flex !important; visibility: hidden; }
 .sheet-item .cmd { align-self: flex-start; text-align: left; font-size: 12px; line-height: 1.4; }
 .sheet .shot-play { right: 6px; bottom: 6px; width: 28px; height: 28px; font-size: 11px; }
 
+/* ---- camera mirror (src/fx/mirror.js): you, drawn in letters, on your own device ---- */
+.mirror { margin: 10px 0; max-width: min(100%, 720px); }
+.mirror-intro { margin: 0 0 8px; }
+.mirror-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 10px; }
+.mirror-btn { min-height: 44px; padding: 0 16px; font: inherit; color: var(--fg); background: transparent; border: 1px solid var(--accent); border-radius: 8px; cursor: pointer; transition: background 0.15s, color 0.15s; }
+.mirror-btn:hover, .mirror-btn:focus-visible { color: var(--bg); background: var(--accent); }
+.mirror-ascii { margin: 0; width: clamp(280px, calc((100dvh - 470px) * 1.3333), 100%); max-width: 100%; overflow: hidden; white-space: pre; text-align: left; letter-spacing: 0; font-family: var(--font); font-weight: 400; color: var(--accent); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
+.mirror-status { margin: 8px 0 0; font-size: 12px; color: var(--dim); }
+.mirror[data-state="live"] .mirror-status::before { content: "● "; color: var(--err); }
+.mirror[data-state="error"] .mirror-status { color: var(--err); }
+.mirror-hint { margin: 2px 0 0; font-size: 12px; }
+.mirror[data-state="ready"] .mirror-hint, .mirror[data-state="error"] .mirror-hint, .mirror[data-state="off"] .mirror-hint { display: none; }
+.mirror-video { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+@media print { .mirror { display: none; } }
+
 /* ---- viewer window (src/lightbox.js) -------------------------------------------------------- */
 .viewer { width: min(92vw, 860px); max-height: 92vh; max-height: 92dvh; padding: 0; overflow: hidden; color: var(--fg); background: var(--panel); border: 1px solid var(--accent); border-radius: 10px; box-shadow: 0 30px 90px rgba(0, 0, 0, 0.7); }
 .viewer[open] { display: flex; flex-direction: column; }

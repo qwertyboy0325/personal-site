@@ -7,6 +7,7 @@
 //   project handoff-semantics -> #projects/handoff-semantics
 //   work black-hole           -> #works/black-hole
 //   view looking-back         -> #photos/looking-back       (renders are #gallery/<name>)
+//   mirror                    -> #mirror                    (opening the address never switches the camera on)
 //   home                      -> (no hash)
 
 import { projects, works, gallery, ui } from './content.js';
@@ -32,6 +33,8 @@ export function routeFor(line) {
   const q = args.join(' ');
   if (name === 'home') return page([], 'home');
   if (SECTIONS.includes(name)) return page([name], name);
+  // The mirror page only explains itself: the camera starts only when its button is pressed. `mirror off` is an action.
+  if (name === 'mirror') return args.length ? null : page(['mirror'], 'mirror');
   if (name === 'photos') return HAS_PHOTOS ? page(['photos'], 'photos') : null;
   if (name === 'project') {
     if (!args.length) return page(['projects'], 'projects');

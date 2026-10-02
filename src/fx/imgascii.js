@@ -38,51 +38,41 @@ export function imageToAscii(px, { cols = 64, ramp = IMG_RAMP, invert = false, c
   const n = ramp.length;
 
   // Average the luminance of every pixel that falls inside each character cell.
+  // Fully opaque pixels (nearly all of them) only add up their channels; the weighting is applied once per cell, not once per pixel.
+  const x0s = new Int32Array(c);
+  const x1s = new Int32Array(c);
+  for (let cx = 0; cx < c; cx++) {
+    x0s[cx] = Math.floor((cx * width) / c);
+    x1s[cx] = Math.min(width, Math.max(x0s[cx] + 1, Math.floor(((cx + 1) * width) / c)));
+  }
   const lum = new Float64Array(c * r);
   for (let cy = 0; cy < r; cy++) {
     const y0 = Math.floor((cy * height) / r);
-    const y1 = Math.max(y0 + 1, Math.floor(((cy + 1) * height) / r));
+    const y1 = Math.min(height, Math.max(y0 + 1, Math.floor(((cy + 1) * height) / r)));
     for (let cx = 0; cx < c; cx++) {
-      const x0 = Math.floor((cx * width) / c);
-      const x1 = Math.max(x0 + 1, Math.floor(((cx + 1) * width) / c));
-      let sum = 0;
-      let count = 0;
-      for (let y = y0; y < y1 && y < height; y++) {
-        for (let x = x0; x < x1 && x < width; x++) {
-          const i = (y * width + x) * 4;
-          const a = data[i + 3] / 255; // transparent pixels count as black
-          sum += ((0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2]) / 255) * a;
-          count++;
+      const xa = x0s[cx];
+      const xb = x1s[cx];
+      let sr = 0;
+      let sg = 0;
+      let sb = 0;
+      let other = 0; // translucent pixels, weighted one by one (transparent counts as black)
+      for (let y = y0; y < y1; y++) {
+        for (let i = (y * width + xa) * 4, end = (y * width + xb) * 4; i < end; i += 4) {
+          const a = data[i + 3];
+          if (a === 255) { sr += data[i]; sg += data[i + 1]; sb += data[i + 2]; }
+          else if (a !== 0) other += (((0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2]) / 255) * a) / 255;
         }
       }
-      lum[cy * c + cx] = count ? sum / count : 0;
+      const count = (y1 - y0) * (xb - xa);
+      lum[cy * c + cx] = count > 0 ? ((0.2126 * sr + 0.7152 * sg + 0.0722 * sb) / 255 + other) / count : 0;
     }
   }
 
   // Unsharp mask: push every cell away from the average of its neighbours, so edges and shapes survive the coarse grid.
   const amount = Number.isFinite(detail) ? clamp(detail, 0, 2) : 0;
   if (amount > 0) {
-    const radius = 3;
-    const blur = (src, w, h, horizontal) => {
-      const out = new Float64Array(src.length);
-      for (let y = 0; y < h; y++) {
-        for (let x = 0; x < w; x++) {
-          let sum = 0;
-          let n = 0;
-          for (let d = -radius; d <= radius; d++) {
-            const xx = horizontal ? x + d : x;
-            const yy = horizontal ? y : y + d;
-            if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue;
-            sum += src[yy * w + xx];
-            n++;
-          }
-          out[y * w + x] = sum / n;
-        }
-      }
-      return out;
-    };
-    const mean = blur(blur(lum, c, r, true), c, r, false);
-    for (let i = 0; i < lum.length; i++) lum[i] = lum[i] + amount * (lum[i] - mean[i]);
+    const mean = boxBlur(boxBlur(lum, c, r, true), c, r, false);
+    for (let i = 0; i < lum.length; i++) lum[i] += amount * (lum[i] - mean[i]);
   }
 
   let lo = 0;
@@ -90,31 +80,51 @@ export function imageToAscii(px, { cols = 64, ramp = IMG_RAMP, invert = false, c
   if (stretch) {
     const trim = Number.isFinite(clip) ? clamp(clip, 0, 0.2) : 0;
     if (trim > 0) {
-      const sorted = Float64Array.from(lum).sort();
+      const sorted = lum.slice().sort();
       lo = sorted[Math.floor(trim * (sorted.length - 1))];
       hi = sorted[Math.ceil((1 - trim) * (sorted.length - 1))];
     } else {
       lo = Infinity;
       hi = -Infinity;
-      for (const v of lum) { if (v < lo) lo = v; if (v > hi) hi = v; }
+      for (let i = 0; i < lum.length; i++) { const v = lum[i]; if (v < lo) lo = v; if (v > hi) hi = v; }
     }
   }
   const span = hi - lo;
   const flat = stretch && span < 1e-9; // one solid colour: there is nothing to stretch, so use its real brightness
 
   const g = Number.isFinite(gamma) && gamma > 0 ? clamp(gamma, 0.3, 3) : 1;
-  const lines = [];
+  const top = n - 1;
+  const scale = span || 1;
+  const lines = new Array(r);
   for (let cy = 0; cy < r; cy++) {
     let line = '';
     for (let cx = 0; cx < c; cx++) {
-      let v = flat ? lum[cy * c + cx] : (lum[cy * c + cx] - lo) / (span || 1);
+      let v = flat ? lum[cy * c + cx] : (lum[cy * c + cx] - lo) / scale;
       if (g !== 1 && v > 0) v = clamp(v, 0, 1) ** g;
-      const level = clamp(Math.round((Number.isFinite(v) ? v : 0) * (n - 1)), 0, n - 1);
-      line += ramp[invert ? n - 1 - level : level];
+      let level = Math.round((Number.isFinite(v) ? v : 0) * top);
+      level = level < 0 ? 0 : level > top ? top : level;
+      line += ramp[invert ? top - level : level];
     }
-    lines.push(line.trimEnd());
+    lines[cy] = line.trimEnd();
   }
   return lines.join('\n');
+}
+
+/** Mean of each cell and its neighbours within 3 cells along one direction (shorter at the edges), in one pass using running sums. */
+function boxBlur(src, w, h, horizontal, radius = 3) {
+  const out = new Float64Array(src.length);
+  const len = horizontal ? w : h;
+  const prefix = new Float64Array(len + 1);
+  const lines = horizontal ? h : w;
+  for (let line = 0; line < lines; line++) {
+    for (let k = 0; k < len; k++) prefix[k + 1] = prefix[k] + src[horizontal ? line * w + k : k * w + line];
+    for (let k = 0; k < len; k++) {
+      const lo = k - radius < 0 ? 0 : k - radius;
+      const hi = k + radius > len - 1 ? len - 1 : k + radius;
+      out[horizontal ? line * w + k : k * w + line] = (prefix[hi + 1] - prefix[lo]) / (hi - lo + 1);
+    }
+  }
+  return out;
 }
 
 /** Browser helper: read an <img> through a small canvas and convert it. */

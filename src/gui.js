@@ -74,6 +74,7 @@ export function guiHtml(lang) {
     <section class="gsec" aria-labelledby="g-works"><h3 id="g-works">// ${esc(g.sections.works)}</h3><div class="ggrid">${workCards}</div></section>
     <section class="gsec" aria-labelledby="g-gallery"><h3 id="g-gallery">// ${esc(g.sections.gallery)}</h3><div class="ggrid ggallery">${galleryCards}</div></section>
     ${photoCards ? `<section class="gsec" aria-labelledby="g-photos"><h3 id="g-photos">// ${esc(g.sections.photos)}</h3><div class="ggrid ggallery gphotos">${photoCards}</div></section>` : ''}
+    <section class="gsec" aria-labelledby="g-play"><h3 id="g-play">// ${esc(g.sections.play)}</h3><div class="ggrid">${card('mirror', `<span class="gtitle">mirror</span><span class="gtag">${esc(t.mirrorCard)}</span>`)}</div></section>
     <section class="gsec" aria-labelledby="g-skills"><h3 id="g-skills">// ${esc(g.sections.skills)}</h3><div class="gskills">${skills}</div></section>
     <section class="gsec" aria-labelledby="g-contact"><h3 id="g-contact">// ${esc(g.sections.contact)}</h3><div class="gcontact">${contact.join('')}</div></section>`;
 }
@@ -84,7 +85,7 @@ export function guiHtml(lang) {
  */
 export function activeKey(line) {
   const m = String(line ?? '').trim().toLowerCase().match(/^(project|work|view)\s+(.+)$/);
-  if (!m) return String(line ?? '').trim().toLowerCase() === 'about' ? 'about' : null;
+  if (!m) { const word = String(line ?? '').trim().toLowerCase(); return word === 'about' || word === 'mirror' ? word : null; }
   const [, kind, arg] = m;
   const list = kind === 'project' ? projects : kind === 'work' ? works : gallery;
   const n = Number(arg);

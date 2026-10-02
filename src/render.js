@@ -85,6 +85,13 @@ export function block(b, o = DEFAULTS) {
         return `<li class="sheet-item"><button type="button" class="sheet-open" data-open="${esc(i.index)}" aria-label="${esc(b.open ?? 'Open larger')}: ${esc(i.title)}">${img(i, '')}${i.play ? '<span class="shot-play" aria-hidden="true">▶</span>' : ''}</button>${caption}</li>`;
       }).join('')}</ul>`;
     }
+    case 'mirror':
+      // The camera mirror (src/fx/mirror.js wires it up). Without JavaScript there is nothing to turn on, so only the explanation shows.
+      return `<figure class="mirror" data-mirror data-state="ready" aria-label="${esc(b.label)}"><p class="mirror-intro">${esc(b.intro)}</p>`
+        + (opts.interactive === false ? '' : `<div class="mirror-actions"><button type="button" class="mirror-btn" data-mirror-start>${esc(b.start)}</button><button type="button" class="mirror-btn" data-mirror-stop hidden>${esc(b.stop)}</button><button type="button" class="mirror-btn" data-mirror-copy hidden>${esc(b.copy)}</button></div>`
+        + '<pre class="mirror-ascii" aria-hidden="true" hidden></pre>'
+        + `<p class="mirror-status" role="status" aria-live="polite"></p><p class="mirror-hint dim">${esc(b.hint)}</p>`)
+        + '</figure>';
     case 'ascii3d':
       return `<pre class="art ascii3d" role="img" aria-label="${esc(b.label ?? 'ASCII 3D model')}" data-ascii3d data-shape="${esc(b.shape ?? 'donut')}">${esc(b.v)}</pre>`;
     case 'row':

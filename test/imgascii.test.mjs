@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { imageToAscii, IMG_RAMP, asciiColumns, createAsciiCache } from '../src/fx/imgascii.js';
+import { referenceImageToAscii } from '../scripts/imgascii-reference.mjs';
 
 /** Build an RGBA image from a function (x, y) -> [r, g, b, a]. */
 function make(width, height, fn) {
@@ -178,4 +179,67 @@ test('createAsciiCache: remembers finished pictures, forgets the least recently 
   assert.equal(c.size, 3);
   assert.equal(c.get('3'), 'three');
   assert.equal(createAsciiCache().size, 0);
+});
+
+test('the fast conversion gives the same text as the plain reference version (random pictures, sizes, alpha and every option)', () => {
+  let seed = 12345;
+  const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 2 ** 32; };
+  let compared = 0;
+  for (let k = 0; k < 400; k++) {
+    const width = 1 + Math.floor(rnd() * 160);
+    const height = 1 + Math.floor(rnd() * 120);
+    const data = new Uint8ClampedArray(width * height * 4);
+    const kind = Math.floor(rnd() * 4); // noise, smooth, translucent, solid
+    for (let i = 0; i < width * height; i++) {
+      const x = i % width;
+      const y = Math.floor(i / width);
+      const v = kind === 1 ? Math.round(127 + 100 * Math.sin(x / 9) * Math.cos(y / 7)) : kind === 3 ? 90 : Math.floor(rnd() * 256);
+      data.set([v, kind === 3 ? 90 : Math.floor(rnd() * 256), kind === 1 ? 255 - v : Math.floor(rnd() * 256), kind === 2 ? Math.floor(rnd() * 256) : 255], i * 4);
+    }
+    const opts = {
+      cols: 1 + Math.floor(rnd() * 120),
+      invert: rnd() < 0.3,
+      stretch: rnd() < 0.8,
+      detail: [0, 0, 0.5, 0.9, 1.6, 2, 5, NaN][Math.floor(rnd() * 8)],
+      clip: [0, 0, 0.02, 0.1, 0.5][Math.floor(rnd() * 5)],
+      gamma: [1, 1, 0.6, 1.8, 0, NaN][Math.floor(rnd() * 6)],
+      cellAspect: [0.5, 0.5, 0.4, 0.7, -1][Math.floor(rnd() * 5)],
+      ramp: rnd() < 0.2 ? '.#' : IMG_RAMP,
+    };
+    const px = { data, width, height };
+    // The two add the same numbers in a different order, so a value sitting exactly on the edge between two characters can land on
+    // either side. That may change a character by one step, in a handful of cells out of thousands, never more.
+    const fast = imageToAscii(px, opts).split('\n');
+    const slow = referenceImageToAscii(px, opts).split('\n');
+    assert.equal(fast.length, slow.length, `case ${k}: same number of rows`);
+    const ramp = opts.ramp;
+    let cells = 0;
+    let differing = 0;
+    for (let y = 0; y < slow.length; y++) {
+      const a = fast[y].padEnd(opts.cols, ' ');
+      const b = slow[y].padEnd(opts.cols, ' ');
+      for (let x = 0; x < b.length; x++) {
+        cells++;
+        if (a[x] !== b[x]) {
+          differing++;
+          assert.ok(Math.abs(ramp.indexOf(a[x]) - ramp.indexOf(b[x])) <= 1, `case ${k}: ${width}x${height} ${JSON.stringify(opts)}: "${a[x]}" vs "${b[x]}" is more than one step`);
+        }
+      }
+    }
+    assert.ok(differing <= Math.max(2, cells * 0.002), `case ${k}: ${differing} of ${cells} cells differ`);
+    compared++;
+  }
+  assert.equal(compared, 400);
+});
+
+test('the conversion is fast enough for a live camera (well under a millisecond per frame at 100 columns)', () => {
+  const w = 400, h = 150;
+  const data = new Uint8ClampedArray(w * h * 4);
+  for (let i = 0; i < w * h; i++) data.set([(i * 7) & 255, (i * 3) & 255, (i * 11) & 255, 255], i * 4);
+  const px = { data, width: w, height: h };
+  for (let i = 0; i < 40; i++) imageToAscii(px, { cols: 100, detail: 1, clip: 0.02 });
+  const t = performance.now();
+  for (let i = 0; i < 100; i++) imageToAscii(px, { cols: 100, detail: 1, clip: 0.02 });
+  const each = (performance.now() - t) / 100;
+  assert.ok(each < 3, `${each.toFixed(2)} ms per frame (a 15 fps camera has 66 ms)`);
 });

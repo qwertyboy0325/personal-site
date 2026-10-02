@@ -12,7 +12,7 @@ import { isPhoto, formatShot } from './photos.js';
 
 /** Photography only appears (command, help, aliases) once there is at least one photo in the gallery. */
 export const HAS_PHOTOS = gallery.some(isPhoto);
-export const PUBLIC_COMMANDS = ['about', 'projects', 'works', 'gallery', ...(HAS_PHOTOS ? ['photos'] : []), 'view', 'skills', 'contact', 'ls', 'cat', 'open', 'theme', 'lang', 'ascii', '3d', 'fx', 'transition', 'cursor', 'hud', 'mode', 'clear', 'history', 'help'];
+export const PUBLIC_COMMANDS = ['about', 'projects', 'works', 'gallery', ...(HAS_PHOTOS ? ['photos'] : []), 'view', 'skills', 'contact', 'ls', 'cat', 'open', 'theme', 'lang', 'ascii', '3d', 'fx', 'transition', 'cursor', 'hud', 'mode', 'mirror', 'clear', 'history', 'help'];
 const HIDDEN_COMMANDS = ['home', 'project', 'work', 'whoami', 'date', 'echo', 'neofetch', 'sudo', 'exit'];
 const ALIASES = { '~': 'home', face: 'ascii', gui: 'hud', images: 'gallery', pictures: 'gallery', ...(HAS_PHOTOS ? { photo: 'photos', photography: 'photos' } : {}), repos: 'projects', '?': 'help', man: 'help', cls: 'clear', dir: 'ls', ll: 'ls' };
 /** Commands whose output is addressable through the URL hash. */
@@ -358,6 +358,13 @@ const commands = {
     return { blocks: [p({ ok: t.hudSet(q) })], effects: [{ type: 'hud', value: q }] };
   },
 
+  mirror(args, ctx) {
+    const t = T(ctx);
+    if (args[0]?.toLowerCase() === 'off') return { blocks: [p({ ok: t.mirror.off })], effects: [{ type: 'mirror', value: 'off' }] };
+    const m = t.mirror;
+    return { blocks: [{ t: 'mirror', label: m.label, intro: m.intro, start: m.start, stop: m.stop, copy: m.copy, hint: m.hint }] };
+  },
+
   mode(args, ctx) {
     const t = T(ctx);
     const all = LAYOUT_MODES.join(', ');
@@ -479,6 +486,7 @@ function argCandidates(cmd) {
     case 'cursor': return CURSOR_MODES;
     case 'hud': return HUD_MODES;
     case 'mode': return LAYOUT_MODES;
+    case 'mirror': return ['off'];
     case 'cat': return [...FILES, 'projects/', ...projectNames.map((s) => `projects/${s}`)];
     case 'ls': return ['projects'];
     case 'open': return ['github', ...projectNames];

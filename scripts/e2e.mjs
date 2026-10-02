@@ -29,7 +29,9 @@ const server = spawn(process.execPath, [join(ROOT, 'scripts/serve.mjs'), String(
 const profileDir = await mkdtemp(join(tmpdir(), 'site-e2e-'));
 const chrome = spawn(CHROME, [
   '--headless=new', `--remote-debugging-port=${CDP_PORT}`, `--user-data-dir=${profileDir}`,
-  '--no-first-run', '--no-default-browser-check', '--disable-gpu', '--hide-scrollbars', 'about:blank',
+  '--no-first-run', '--no-default-browser-check', '--disable-gpu', '--hide-scrollbars',
+  '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream', // a made-up camera, and no permission prompt (the mirror test)
+  'about:blank',
 ], { stdio: 'ignore' });
 const cleanup = async () => { chrome.kill(); server.kill(); await rm(profileDir, { recursive: true, force: true }).catch(() => {}); };
 process.on('exit', () => { chrome.kill(); server.kill(); });
@@ -1234,6 +1236,103 @@ try {
   const phoneBar = await ev(`(() => { const r = (s) => document.querySelector(s).getBoundingClientRect(); return { term: document.documentElement.dataset.view, bar: Math.round(r('#crumbs').width), back: [Math.round(r('#crumb-back').width), Math.round(r('#crumb-back').height)], doc: document.documentElement.scrollWidth - innerWidth, path: Math.round(r('#crumb-path').right) <= innerWidth }; })()`);
   check(phoneBar.term === 'term' && phoneBar.doc <= 0 && phoneBar.back[0] >= 44 && phoneBar.back[1] >= 44 && phoneBar.path, 'on a phone a card opens its page in the terminal view; the location bar fits and its buttons are touch-sized', JSON.stringify(phoneBar));
   await shot('29-reader-phone', 300);
+  await viewport(1440, 900);
+
+  console.log('camera mirror (a made-up camera: nothing real is filmed)');
+  await viewport(1440, 900);
+  await load('about:blank'); await load(BASE); await bootDone();
+  const mir = () => ev(`(() => { const f = document.querySelector('#log .mirror'); if (!f) return null; const q = (s) => f.querySelector(s); return { state: f.dataset.state, startHidden: q('[data-mirror-start]').hidden, stopHidden: q('[data-mirror-stop]').hidden, copyHidden: q('[data-mirror-copy]').hidden, preHidden: q('.mirror-ascii').hidden, status: q('.mirror-status').textContent, text: q('.mirror-ascii').textContent, video: !!f.querySelector('video') && f.querySelector('video').srcObject !== null, count: document.querySelectorAll('#log .mirror').length }; })()`);
+  await typeText('mirror'); await enter();
+  await until(async () => !!(await mir()), 3000, 'mirror figure');
+  const cam0 = await mir();
+  check(cam0.state === 'ready' && !cam0.video && cam0.preHidden && cam0.stopHidden && !cam0.startHidden, 'the mirror asks first: it explains itself and does not touch the camera until the button is pressed', JSON.stringify(cam0));
+  check((await ev(`document.querySelector('#log .mirror-intro').textContent`)).includes('Nothing is recorded, saved or sent anywhere'), 'the explanation says nothing is recorded, saved or sent');
+  await shot('30-mirror-ask', 400);
+  await ev(`document.querySelector('#log [data-mirror-start]').click()`);
+  await until(async () => (await mir()).state === 'live', 8000, 'camera live');
+  await sleep(700);
+  const cam1 = await mir();
+  check(cam1.video && !cam1.preHidden && !cam1.stopHidden && !cam1.copyHidden && cam1.startHidden && cam1.status.includes('Camera on'), 'after pressing the button the camera runs and the letters appear, with Stop and Copy', JSON.stringify({ ...cam1, text: cam1.text.length }));
+  const camLines1 = cam1.text.split('\n');
+  await until(() => ev(`!!document.querySelector('#log .mirror').dataset.perf`), 8000, 'frame timing available');
+  const perfInfo = JSON.parse((await ev(`document.querySelector('#log .mirror').dataset.perf ?? 'null'`)) ?? 'null');
+  check(perfInfo && perfInfo.read + perfInfo.text + perfInfo.dom < 25 && perfInfo.dom < 3 && perfInfo.interval <= 100, 'a frame costs only a few milliseconds (reading the camera, making the text, updating the page) and keeps the full frame rate', JSON.stringify(perfInfo));
+  check(camLines1.length >= 15 && /^[ .:\-=+*#%@\n]+$/.test(cam1.text) && Math.max(...camLines1.map((l) => l.length)) >= 60, 'the frame is made of the usual characters, about 60 to 100 wide', `${camLines1.length} lines`);
+  await sleep(700);
+  const cam2 = await mir();
+  check(cam2.text !== cam1.text, 'it is live: the letters change from frame to frame');
+  const geo = await ev(`(() => { const p = document.querySelector('#log .mirror-ascii'); const r = p.getBoundingClientRect(); const pane = document.getElementById('screen').getBoundingClientRect(); const cs = getComputedStyle(p); return { w: Math.round(r.width), inside: r.right <= pane.right + 1, scrollW: p.scrollWidth, clientW: p.clientWidth, align: cs.textAlign, mono: cs.fontFamily === getComputedStyle(document.body).fontFamily, doc: document.documentElement.scrollWidth - innerWidth }; })()`);
+  check(geo.inside && geo.scrollW <= geo.clientW + 1 && geo.align === 'left' && geo.mono && geo.doc <= 0, 'the letters fit their box, in the terminal font, without scrolling the page', JSON.stringify(geo));
+  await shot('30-mirror-live', 100);
+  // Copy one frame as text
+  await ev(`document.querySelector('#log [data-mirror-copy]').click()`);
+  await until(() => ev(`document.getElementById('toast').classList.contains('show')`), 3000, 'toast');
+  check((await ev(`document.getElementById('toast').textContent`)).length > 5, 'copying a frame tells you how it went');
+  // Stop with the button
+  await ev(`document.querySelector('#log [data-mirror-stop]').click()`);
+  await sleep(300);
+  const cam3 = await mir();
+  check(cam3.state === 'off' && !cam3.video && cam3.preHidden && !cam3.startHidden && cam3.status === 'Camera off.', 'Stop releases the camera (no stream left) and offers to start again', JSON.stringify({ ...cam3, text: 0 }));
+  const frozen = (await mir()).text;
+  await sleep(500);
+  check((await mir()).text === frozen, 'and the letters no longer change');
+  // Esc stops it too, and `mirror off` as well
+  await ev(`document.querySelector('#log [data-mirror-start]').click()`);
+  await until(async () => (await mir()).state === 'live', 8000, 'live again');
+  await ev(`document.querySelector('#log .mirror').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
+  await sleep(300);
+  check((await mir()).state === 'off', 'Esc turns the camera off');
+  await ev(`document.querySelector('#log [data-mirror-start]').click()`);
+  await until(async () => (await mir()).state === 'live', 8000, 'live a third time');
+  await typeText('mirror off'); await enter(); await sleep(400);
+  check((await mir()).state === 'off' && !(await mir()).video, 'the command `mirror off` turns it off');
+  // Moving to another page lets go of the camera
+  await ev(`document.querySelector('#log [data-mirror-start]').click()`);
+  await until(async () => (await mir()).state === 'live', 8000, 'live a fourth time');
+  const held = () => ev(`(() => new Promise((res) => navigator.mediaDevices.enumerateDevices().then(() => res(window.__mirrorStreams ?? null))))()`);
+  await typeText('about'); await enter(); await sleep(600);
+  check((await mir()) === null, 'opening another page removes the mirror (and with it the camera)');
+  // Language: the wording follows
+  await typeText('lang zh'); await enter(); await sleep(900);
+  await typeText('mirror'); await enter();
+  await until(async () => !!(await mir()), 3000, 'zh mirror');
+  check((await ev(`document.querySelector('#log .mirror-intro').textContent`)).includes('不會被錄影、儲存，也不會傳到任何地方') && (await ev(`document.querySelector('#log [data-mirror-start]').textContent`)) === '▶ 開啟相機', 'in Chinese the explanation and buttons are Chinese');
+  await typeText('lang en'); await enter(); await sleep(900);
+  // Errors: blocked, no camera, in use
+  for (const [name, expectKey] of [['NotAllowedError', 'blocked'], ['NotFoundError', 'No camera was found'], ['NotReadableError', 'another app']]) {
+    await typeText('mirror'); await enter();
+    await until(async () => !!(await mir()), 3000, 'mirror for error');
+    await ev(`navigator.mediaDevices.getUserMedia = () => Promise.reject(Object.assign(new Error('x'), { name: '${name}' }))`);
+    await ev(`document.querySelector('#log [data-mirror-start]').click()`);
+    await until(async () => (await mir()).state === 'error', 3000, `error ${name}`);
+    const er = await mir();
+    check(er.status.includes(expectKey) && !er.startHidden && er.preHidden, `${name}: a clear message and the button is back`, er.status);
+  }
+  await shot('30-mirror-error', 300);
+  // Light theme and a phone
+  await load('about:blank'); await load(BASE); await bootDone();
+  await typeText('theme light'); await enter(); await sleep(900);
+  await typeText('mirror'); await enter();
+  await until(async () => !!(await mir()), 3000, 'mirror light');
+  await ev(`document.querySelector('#log [data-mirror-start]').click()`);
+  await until(async () => (await mir()).state === 'live', 8000, 'live light');
+  await sleep(600);
+  const light = await mir();
+  check(light.text.length > 200 && /^[ .:\-=+*#%@\n]+$/.test(light.text), 'the light theme works too (the letters are inverted for dark-on-light)');
+  await shot('30-mirror-light', 100);
+  await ev(`document.querySelector('#log [data-mirror-stop]').click()`);
+  await typeText('theme dark'); await enter(); await sleep(700);
+  await viewport(390, 844, true);
+  await load('about:blank'); await load(BASE); await bootDone();
+  await typeText('mirror'); await enter();
+  await until(async () => !!(await mir()), 3000, 'mirror phone');
+  await ev(`document.querySelector('#log [data-mirror-start]').click()`);
+  await until(async () => (await mir()).state === 'live', 8000, 'live phone');
+  await sleep(600);
+  const ph2 = await ev(`(() => { const p = document.querySelector('#log .mirror-ascii'); const r = p.getBoundingClientRect(); const lines = p.textContent.split('\\n'); const btn = [...document.querySelectorAll('#log .mirror-btn')].filter((b) => !b.hidden).map((b) => Math.round(b.getBoundingClientRect().height)); return { w: Math.round(r.width), cols: Math.max(...lines.map((l) => l.length)), doc: document.documentElement.scrollWidth - innerWidth, btn, inside: r.right <= innerWidth }; })()`);
+  check(ph2.doc <= 0 && ph2.inside && ph2.cols >= 36 && ph2.cols <= 60 && ph2.btn.every((h) => h >= 44), 'on a phone it fits, uses fewer characters, and its buttons are touch-sized', JSON.stringify(ph2));
+  await shot('30-mirror-phone', 100);
+  await ev(`document.querySelector('#log [data-mirror-stop]').click()`);
   await viewport(1440, 900);
 
   console.log('contact sheets');

@@ -12,7 +12,7 @@ const firstPhoto = gallery.find(isPhoto);
 const firstRender = gallery.find((g) => !isPhoto(g));
 
 test('routeFor: the main sections are pages with their own address', () => {
-  for (const name of ['about', 'projects', 'works', 'gallery', 'photos', 'skills', 'contact', 'help']) {
+  for (const name of ['about', 'projects', 'works', 'gallery', 'photos', 'skills', 'contact', 'help', 'mirror']) {
     const r = routeFor(name);
     assert.deepEqual([r.path, r.hash, r.cmd, r.section], [[name], name, name, name], name);
   }
@@ -47,7 +47,7 @@ test('routeFor: things that are not pages are null (so the output is appended, n
 });
 
 test('every page route is a command that really shows something (no page leads to an error)', () => {
-  const lines = ['home', 'about', 'projects', 'works', 'gallery', 'photos', 'skills', 'contact', 'help', ...projects.map((p) => `project ${p.slug}`), ...works.map((w) => `work ${w.slug}`), ...gallery.map((g) => `view ${g.slug}`)];
+  const lines = ['home', 'about', 'projects', 'works', 'gallery', 'photos', 'skills', 'contact', 'help', 'mirror', ...projects.map((p) => `project ${p.slug}`), ...works.map((w) => `work ${w.slug}`), ...gallery.map((g) => `view ${g.slug}`)];
   for (const line of lines) {
     const route = routeFor(line);
     assert.ok(route, line);
@@ -57,7 +57,7 @@ test('every page route is a command that really shows something (no page leads t
 });
 
 test('lineForHash: every page address leads back to its command, and only valid ones do', () => {
-  const lines = ['home', 'about', 'projects', 'works', 'gallery', 'photos', 'skills', 'contact', 'help', ...projects.map((p) => `project ${p.slug}`), ...works.map((w) => `work ${w.slug}`), ...gallery.map((g) => `view ${g.slug}`)];
+  const lines = ['home', 'about', 'projects', 'works', 'gallery', 'photos', 'skills', 'contact', 'help', 'mirror', ...projects.map((p) => `project ${p.slug}`), ...works.map((w) => `work ${w.slug}`), ...gallery.map((g) => `view ${g.slug}`)];
   const seen = new Set();
   for (const line of lines) {
     const route = routeFor(line);
@@ -95,7 +95,7 @@ test('titles and breadcrumbs', () => {
   assert.deepEqual(crumbsFor(routeFor('project 1')), [{ label: '~', cmd: 'home' }, { label: 'projects', cmd: 'projects' }, { label: projects[0].slug, cmd: null }]);
   assert.deepEqual(crumbsFor(routeFor(`view ${firstPhoto.slug}`)).map((c) => c.cmd), ['home', 'photos', null]);
   assert.deepEqual(crumbsFor(null), [{ label: '~', cmd: 'home' }]);
-  for (const lang of ['en', 'zh']) for (const k of ['home', 'about', 'projects', 'works', 'gallery', 'photos', 'skills', 'contact', 'help']) assert.ok(ui[lang].pages[k], `${lang}.pages.${k}`);
+  for (const lang of ['en', 'zh']) for (const k of ['home', 'about', 'projects', 'works', 'gallery', 'photos', 'skills', 'contact', 'help', 'mirror']) assert.ok(ui[lang].pages[k], `${lang}.pages.${k}`);
   for (const lang of ['en', 'zh']) assert.ok(ui[lang].nav.label && ui[lang].nav.back && ui[lang].nav.forward);
 });
 

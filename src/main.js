@@ -12,6 +12,7 @@ import { createHud } from './hud.js';
 import { createGui } from './gui.js';
 import { createLightbox } from './lightbox.js';
 import { createDock } from './dock.js';
+import { createMirror, stopMirror } from './fx/mirror.js';
 import { createWindows } from './windows.js';
 import { asciiFromImage, asciiColumns, createAsciiCache } from './fx/imgascii.js';
 
@@ -293,6 +294,14 @@ async function animateImage(fig) {
   trans.revealEntry(fig.querySelector('.shot-open') ?? fig); // dissolve only over the picture itself, never the whole entry
 }
 
+function startNewMirrors() {
+  for (const fig of log.querySelectorAll('[data-mirror]:not([data-started])')) {
+    fig.dataset.started = '';
+    const t = ui[state.lang].mirror;
+    createMirror(fig, { t, reduceMotion, getInvert: () => ctx().theme === 'light', onCopied: (ok) => toast(ok ? t.copied : t.copyFailed) });
+  }
+}
+
 function startNewImages() {
   for (const fig of log.querySelectorAll('[data-image]:not([data-started])')) {
     fig.dataset.started = '';
@@ -318,6 +327,7 @@ function print(blocks, { reveal = true, top = false } = {}) {
   startNewFaces();
   startNewModels();
   startNewImages();
+  startNewMirrors();
   if (blocks.some((b) => b.t === 'sheet')) schedulePrecompute(); // a contact sheet brought new thumbnails
   if (top) screen.scrollTop = 0; // a new page starts at its top; output appended to a log follows the end
   else scrollToEnd();
@@ -415,7 +425,8 @@ function applyLang(lang, persist) {
 
 function applyEffects(effects) {
   for (const fx of effects) {
-    if (fx.type === 'clear') { stopFaces(); log.replaceChildren(); leavePage(); }
+    if (fx.type === 'clear') { stopFaces(); stopMirror(); log.replaceChildren(); leavePage(); }
+    else if (fx.type === 'mirror') stopMirror();
     else if (fx.type === 'theme') applyTheme(fx.value, true);
     else if (fx.type === 'lang') applyLang(fx.value, true);
     else if (fx.type === 'fx') applyFx(fx.value, true);

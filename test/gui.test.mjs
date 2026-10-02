@@ -48,10 +48,10 @@ test('guiHtml: tools become chips, other skills become a list, stack chips come 
 
 test('guiHtml: accessible structure (labelled sections, real buttons, safe external link)', () => {
   const html = guiHtml('en');
-  for (const id of ['g-projects', 'g-works', 'g-gallery', 'g-skills', 'g-contact']) {
+  for (const id of ['g-projects', 'g-works', 'g-gallery', 'g-play', 'g-skills', 'g-contact']) {
     assert.ok(html.includes(`aria-labelledby="${id}"`) && html.includes(`id="${id}"`), id);
   }
-  assert.equal(count(html, /<button type="button" class="gcard gbtn/g), projects.length + works.length + gallery.length + 1);
+  assert.equal(count(html, /<button type="button" class="gcard gbtn/g), projects.length + works.length + gallery.length + 2); // + the about button + the mirror card
   assert.match(html, /<a class="gbtn glink" href="https:\/\/github\.com\/qwertyboy0325" target="_blank" rel="noopener noreferrer">/);
   assert.match(html, /<pre class="gbanner" aria-hidden="true">/);
   assert.ok(!/\son\w+=|\sstyle=|<script/i.test(html), 'no inline handlers, styles or scripts (CSP)');
