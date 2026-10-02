@@ -120,7 +120,7 @@ test/                 node:test 單元測試
 - **分享預覽圖**（`og:image`）與 **網域 / canonical 網址**：還沒有，所以 `index.html` 沒有 `og:image`、`og:url`、`canonical`，也沒有 `sitemap.xml`。
 - **授權條款**：尚未選擇。
 - **Lighthouse**（本機 `npx lighthouse@12`，桌面預設，連跑 6 次）：效能 100、無障礙 100、最佳實務 100、SEO 92，CLS 0.01；手機預設（單次）效能 98、CLS 0.05。SEO 少的 8 分是 `robots.txt` 項目：Lighthouse 從頁面內用 `fetch` 抓檔，被我們刻意嚴格的 CSP（沒有 `connect-src`）擋下，`robots.txt` 本身存在且回 200，爬蟲不受影響，所以不為此放寬 CSP。本機開發伺服器沒有壓縮與快取標頭，那幾項（壓縮、`no-store` 造成的 bfcache）要等部署到真正的主機才有意義。這次跑出並修掉的：版面位移（左右分屏在 JS 啟動前先把終端機固定在第 2 欄）、email 按鈕對比不足（瀏覽器預設按鈕底色）、`fx`／語言按鈕的無障礙名稱要包含可見文字。
-- **部署**：任何靜態主機都可以（GitHub Pages、Cloudflare Pages…）。所有路徑都是相對的，可放在子路徑。部署前先跑 `npm run check`。
+- **部署**：已上線 https://qwertyboy0325.github.io/personal-site/ （GitHub Pages，從 `main` 分支根目錄發佈；每次 push 到 `main` 會自動重新發佈）。線上版 Lighthouse：效能 97、無障礙 100、最佳實務 100、SEO 92，壓縮與 bfcache 項目已通過。任何靜態主機都可以（GitHub Pages、Cloudflare Pages…）。所有路徑都是相對的，可放在子路徑。部署前先跑 `npm run check`。
 
 ## 備註
 
