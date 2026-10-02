@@ -1,4 +1,5 @@
-import { execute, complete, welcomeBlocks, bootLines, NAV } from './engine.js';
+import { execute, complete, welcomeBlocks, bootLines, LAYOUT_MODES } from './engine.js';
+import { routeFor, lineForHash, crumbsFor, documentTitle } from './route.js';
 import { renderEntry, esc } from './render.js';
 import { THEMES, LANGS, ui, profile } from './content.js';
 import { createFx, FX_MODES } from './fx/fx.js';
@@ -22,6 +23,10 @@ const input = $('cmd');
 const chips = $('chips');
 const dockEl = $('dock');
 const win = $('window');
+const crumbsEl = $('crumbs');
+const crumbPath = $('crumb-path');
+const crumbBack = $('crumb-back');
+const crumbFwd = $('crumb-fwd');
 
 const PS1 = `${profile.user}@${profile.host}:~$`;
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -54,6 +59,7 @@ const detectTransition = () => {
 };
 
 const detectHud = () => (store.get('hud') === 'off' ? 'off' : 'on');
+const detectMode = () => (LAYOUT_MODES.includes(store.get('mode')) ? store.get('mode') : 'page');
 
 const detectCursor = () => {
   const saved = store.get('cursor');
@@ -68,13 +74,17 @@ const state = {
   transition: detectTransition(),
   reticle: detectCursor(), // reticle mode; note `cursor` below is the history index
   hud: detectHud(),
+  mode: detectMode(), // `page`: each page replaces the last; `log`: output keeps scrolling
+  page: null,         // the route of the page on screen (src/route.js), null after `clear`
+  navI: 0,            // position in the browser history entries this site made, and the furthest one (for Back / Forward)
+  navMax: 0,
   history: [],
   cursor: 0,
   draft: '',
   booting: true,
   skip: false,
 };
-const ctx = () => ({ lang: state.lang, theme: state.theme ?? systemTheme(), fx: state.fx, transition: state.transition, cursor: state.reticle, hud: state.hud, history: state.history });
+const ctx = () => ({ lang: state.lang, theme: state.theme ?? systemTheme(), fx: state.fx, transition: state.transition, cursor: state.reticle, hud: state.hud, mode: state.mode, history: state.history });
 
 // ---- background effect + ASCII faces ------------------------------------------
 const backdrop = createFx($('fx'), { reduceMotion });
@@ -241,15 +251,60 @@ function scrollToEnd() {
   screen.scrollTop = screen.scrollHeight;
 }
 
-function print(blocks, { reveal = true } = {}) {
+function print(blocks, { reveal = true, top = false } = {}) {
   if (!blocks.length) return;
   log.insertAdjacentHTML('beforeend', renderEntry(blocks, { ps1: PS1 }));
   startNewFaces();
   startNewModels();
   startNewImages();
-  scrollToEnd();
+  if (top) screen.scrollTop = 0; // a new page starts at its top; output appended to a log follows the end
+  else scrollToEnd();
   // Entries with a picture run their own ASCII-to-image reveal instead of the generic overlay.
   if (reveal && !blocks.some((b) => b.t === 'image')) trans.revealEntry(log.lastElementChild);
+}
+
+// ---- location: breadcrumb, Back / Forward, one address per page -----------------------
+function renderCrumbs() {
+  const t = ui[state.lang];
+  crumbsEl.setAttribute('aria-label', t.nav.label);
+  for (const [b, label] of [[crumbBack, t.nav.back], [crumbFwd, t.nav.forward]]) { b.setAttribute('aria-label', label); b.title = label; }
+  crumbBack.disabled = state.navI <= 0;
+  crumbFwd.disabled = state.navI >= state.navMax;
+  const parts = crumbsFor(state.page);
+  crumbPath.replaceChildren(...parts.map((c, i) => {
+    const li = document.createElement('li');
+    if (c.cmd) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'crumb';
+      b.dataset.cmd = c.cmd;
+      b.textContent = c.label;
+      li.append(b);
+    } else li.textContent = c.label;
+    if (i === parts.length - 1) li.setAttribute('aria-current', 'page');
+    return li;
+  }));
+}
+
+/** A page is now on screen: remember it, retitle the tab, and (for a new page) add a browser history entry so Back works. */
+function enterPage(route, { push = true } = {}) {
+  const changed = !state.page || state.page.hash !== route.hash;
+  state.page = route;
+  if (push && changed) {
+    try {
+      state.navI += 1;
+      state.navMax = state.navI;
+      history.pushState({ i: state.navI }, '', route.hash ? `#${route.hash}` : `${location.pathname}${location.search}`);
+    } catch { /* e.g. a sandboxed frame: the page still works, only Back does not */ }
+  }
+  document.title = documentTitle(route, state.lang);
+  renderCrumbs();
+}
+
+function leavePage() {
+  state.page = null;
+  document.title = documentTitle(null, state.lang);
+  renderCrumbs();
 }
 
 function applyTheme(name, persist) {
@@ -267,7 +322,7 @@ function applyLang(lang, persist) {
   state.lang = lang;
   const t = ui[lang];
   document.documentElement.lang = lang === 'zh' ? 'zh-Hant' : 'en';
-  document.title = t.documentTitle;
+  document.title = documentTitle(state.page, lang);
   $('status').setAttribute('aria-label', t.status.label);
   $('status').querySelector('.status-claims').textContent = t.status.claims;
   input.setAttribute('aria-label', t.inputLabel);
@@ -289,6 +344,7 @@ function applyLang(lang, persist) {
     b.setAttribute('aria-label', t.contactButton);
     b.title = t.contactButton;
   }
+  renderCrumbs();
   gui.render(lang);
   lightbox.refresh();
   windows.refresh();
@@ -297,11 +353,12 @@ function applyLang(lang, persist) {
 
 function applyEffects(effects) {
   for (const fx of effects) {
-    if (fx.type === 'clear') { stopFaces(); log.replaceChildren(); }
+    if (fx.type === 'clear') { stopFaces(); log.replaceChildren(); leavePage(); }
     else if (fx.type === 'theme') applyTheme(fx.value, true);
     else if (fx.type === 'lang') applyLang(fx.value, true);
     else if (fx.type === 'fx') applyFx(fx.value, true);
     else if (fx.type === 'hud') { state.hud = fx.value; applyHud(fx.value === 'on'); store.set('hud', fx.value); }
+    else if (fx.type === 'mode') { state.mode = fx.value; store.set('mode', fx.value); }
     else if (fx.type === 'cursor') { state.reticle = fx.value; reticle.setMode(fx.value); store.set('cursor', fx.value); }
     else if (fx.type === 'transition') { state.transition = fx.value; store.set('transition', fx.value); }
     else if (fx.type === 'open') window.open(fx.url, '_blank', 'noopener,noreferrer');
@@ -311,7 +368,7 @@ function applyEffects(effects) {
 // ---- running commands ---------------------------------------------------------
 const WIPE_EFFECTS = new Set(['theme', 'lang', 'clear']);
 
-function run(line, { record = true } = {}) {
+function run(line, { record = true, push = true } = {}) {
   trans.settle(); // a pending clear / theme / language swap must land before this command runs
   const trimmed = line.trim();
   if (!trimmed) { print([{ t: 'echo', v: '' }]); return; }
@@ -320,11 +377,25 @@ function run(line, { record = true } = {}) {
   state.draft = '';
 
   const res = execute(trimmed, ctx());
+  const route = routeFor(trimmed);
   const clearing = res.effects.some((e) => e.type === 'clear');
   const wiping = res.effects.some((e) => WIPE_EFFECTS.has(e.type));
+  const langChanged = res.effects.some((e) => e.type === 'lang');
   const apply = () => {
     applyEffects(res.effects.filter((e) => e.type !== 'open'));
-    if (!clearing) print([{ t: 'echo', v: trimmed }, ...res.blocks], { reveal: !wiping });
+    if (!clearing) {
+      const asPage = Boolean(route) && state.mode === 'page';
+      if (asPage) { stopFaces(); log.replaceChildren(); } // a page replaces the one before it
+      else if (langChanged && state.page && state.mode === 'page') {
+        // The language changed: show the page you are on in the new language, then the confirmation under it.
+        const again = execute(state.page.cmd, ctx());
+        stopFaces();
+        log.replaceChildren();
+        print([{ t: 'echo', v: state.page.cmd }, ...again.blocks], { reveal: false, top: true });
+      }
+      print([{ t: 'echo', v: trimmed }, ...res.blocks], { reveal: !wiping, top: asPage });
+    }
+    if (route) enterPage(route, { push });
     gui.setActive(trimmed);
     dock.setActive(trimmed);
     hud.refresh();
@@ -333,15 +404,13 @@ function run(line, { record = true } = {}) {
   if (wiping) trans.run(apply, clearing ? { rect: screen.getBoundingClientRect() } : {});
   else apply();
   applyEffects(res.effects.filter((e) => e.type === 'open'));
-  if (res.nav) { try { history.replaceState(null, '', `#${res.nav}`); } catch { /* ignore */ } }
 }
 
 // ---- boot ---------------------------------------------------------------------
 const sleep = (ms) => (state.skip || reduceMotion ? Promise.resolve() : new Promise((r) => setTimeout(r, ms)));
 
 async function boot() {
-  const hash = location.hash.slice(1).toLowerCase();
-  const deepLink = NAV.has(hash) ? hash : null;
+  const deepLink = location.hash && lineForHash(location.hash) !== 'home' ? lineForHash(location.hash) : null;
   log.replaceChildren();
   log.setAttribute('aria-live', 'off');
 
@@ -353,8 +422,14 @@ async function boot() {
     }
     await sleep(120);
   }
-  print(welcomeBlocks(ctx()));
-  if (deepLink) run(deepLink, { record: false });
+  // As a page, a deep link replaces the welcome screen; as a log it follows it.
+  if (!deepLink || state.mode === 'log') {
+    print(welcomeBlocks(ctx()));
+    state.page = routeFor('home');
+    document.title = documentTitle(state.page, state.lang);
+    renderCrumbs();
+  }
+  if (deepLink) run(deepLink, { record: false, push: false });
 
   log.setAttribute('aria-live', 'polite');
   state.booting = false;
@@ -388,7 +463,7 @@ input.addEventListener('keydown', (e) => {
   } else if (e.ctrlKey && k.toLowerCase() === 'l') {
     e.preventDefault();
     trans.settle();
-    trans.run(() => { stopFaces(); log.replaceChildren(); }, { rect: screen.getBoundingClientRect() });
+    trans.run(() => { stopFaces(); log.replaceChildren(); leavePage(); }, { rect: screen.getBoundingClientRect() });
   } else if (e.ctrlKey && k.toLowerCase() === 'c') {
     e.preventDefault();
     print([{ t: 'echo', v: `${input.value}^C` }]);
@@ -413,11 +488,14 @@ function onCommandClick(e) {
 }
 log.addEventListener('click', onCommandClick);
 log.addEventListener('click', (e) => {
-  const open = e.target.closest('.shot-open');
+  const open = e.target.closest('.shot-open, .sheet-open');
   if (open) openPicture(Number(open.dataset.open) - 1, open);
 });
 chips.addEventListener('click', onCommandClick);
 dockEl.addEventListener('click', onCommandClick);
+crumbsEl.addEventListener('click', onCommandClick); // the parts of the breadcrumb
+crumbBack.addEventListener('click', () => history.back());
+crumbFwd.addEventListener('click', () => history.forward());
 guiEl.addEventListener('click', onCommandClick); // cards and the recent-commands list
 tabs.addEventListener('click', (e) => {
   const b = e.target.closest('[data-view]');
@@ -445,9 +523,23 @@ const skipBoot = () => { state.skip = true; };
 addEventListener('keydown', skipBoot, { once: true });
 addEventListener('pointerdown', skipBoot, { once: true });
 
-addEventListener('hashchange', () => {
-  const hash = location.hash.slice(1).toLowerCase();
-  if (!state.booting && NAV.has(hash)) run(hash, { record: false });
+// Back / Forward and edited addresses: show the page the address names.
+addEventListener('popstate', (e) => {
+  if (state.booting) return;
+  if (Number.isInteger(e.state?.i)) state.navI = e.state.i;
+  else {
+    // An address typed in by hand (or an in-page link): the browser made a new entry for it, forgetting any forward ones.
+    state.navI += 1;
+    state.navMax = state.navI;
+    try { history.replaceState({ i: state.navI }, ''); } catch { /* ignore */ }
+  }
+  const line = lineForHash(location.hash);
+  if (line) run(line, { record: false, push: false });
+  else {
+    // The address names no page: keep what is on screen, and make the address say so.
+    try { history.replaceState({ i: state.navI }, '', state.page?.hash ? `#${state.page.hash}` : `${location.pathname}${location.search}`); } catch { /* ignore */ }
+    renderCrumbs();
+  }
 });
 
 // ---- start --------------------------------------------------------------------
@@ -455,6 +547,8 @@ applyLang(state.lang, false);
 if (state.theme) applyTheme(state.theme, false);
 form.hidden = false;
 chips.hidden = false;
+crumbsEl.hidden = false;
+try { history.replaceState({ i: 0 }, ''); } catch { /* ignore */ }
 dockEl.hidden = false;
 window.__siteReady = true; // tells src/guard.js the terminal is operable
 document.querySelector('.boot-fail')?.remove(); // it may have appeared on a very slow load

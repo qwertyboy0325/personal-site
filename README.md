@@ -30,7 +30,7 @@ npm run build    # 重新產生 index.html 內的預渲染區塊
 |---|---|
 | `help` | 指令清單 |
 | `about` `projects` `works` `skills` `contact` | 內容。`project <編號\|名稱>` 看單一專案，`work <編號\|名稱>` 看單一作品 |
-| `gallery` `view <編號\|名稱>` | 圖片與影片。`view 1` 會先把圖片用字元畫出來（由圖片自己的像素算出），再「溶解」成真正的圖片；點圖片開檢視器（←/→ 切換、Esc 關閉）：寬螢幕＋滑鼠時是**可拖曳的浮動視窗**（可同時開多個，點擊置前，標題列顯示檔名與尺寸，Alt+方向鍵可用鍵盤移動），窄螢幕與觸控則是全頁對話框。左側概覽也有縮圖卡片 |
+| `gallery` `photos` `view <編號\|名稱>` | 圖片、影片與照片：`gallery`／`photos` 是一整面**縮圖格**（點縮圖在檢視器放大，點底下的標題進入該張的頁面）。`view 1` 會先把圖片用字元畫出來（由圖片自己的像素算出），再「溶解」成真正的圖片；點圖片開檢視器（←/→ 切換、Esc 關閉）：寬螢幕＋滑鼠時是**可拖曳的浮動視窗**（可同時開多個，點擊置前，標題列顯示檔名與尺寸，Alt+方向鍵可用鍵盤移動），窄螢幕與觸控則是全頁對話框。左側概覽也有縮圖卡片 |
 | `ls` `cat <檔案>` `open <目標>` | 虛擬檔案系統與開啟連結 |
 | `theme [dark\|light\|amber\|matrix]` | 色彩主題 |
 | `lang [en\|zh]` | 語言（預設依瀏覽器語言） |
@@ -39,6 +39,7 @@ npm run build    # 重新產生 index.html 內的預渲染區塊
 | `fx [both\|rain\|network\|off]` | 背景特效 |
 | `transition [auto\|dissolve\|scan\|rain\|off]` | ASCII 轉場 |
 | `cursor [full\|minimal\|off]` | 準星游標；預設 `minimal`（小圓環＋會淡出的座標），`full` 才有滿版十字線 |
+| `mode [page\|log]` | `page`（預設）：右側像文件一樣**一次顯示一頁**，新的一頁取代上一頁；`log`：像傳統終端機，每個指令的輸出都保留、往下捲 |
 | `hud [on\|off]`（別名 `gui`） | 左側概覽。≥ 1000px 與終端機左右並排；較窄時改用上方「概覽｜終端機」分頁 |
 | `clear` `history` | 清除畫面、歷史指令 |
 
@@ -57,6 +58,7 @@ src/main.js           DOM、鍵盤、主題、語言、開機、各效果的接�
 src/lightbox.js       圖片檢視器（窄螢幕／觸控）：原生 <dialog>（焦點陷阱、Esc、焦點回到來源），支援影片，關閉時停止播放
 src/windows.js        圖片檢視器（寬螢幕＋滑鼠）：可拖曳、可堆疊的浮動視窗（最多 6 個、拖曳限制在畫面內、非 modal，終端機照常可用）
 src/photos.js         攝影：拍攝資訊的白名單與格式化（純函式）
+src/route.js          每個「頁面」的位置：指令 ↔ 網址 hash ↔ 麵包屑 ↔ 標題（純函式）
 src/dock.js           寬螢幕＋滑鼠的 dock 導覽：七個主要指令、游標附近的圖示放大、目前區段的圓點（純函式 + 小控制器）
 src/viewer-content.js 兩種檢視器共用：檔名／尺寸、<img>/<video> 的建立、停止影片
 src/fx/imgascii.js    圖片 -> ASCII（純函式：RGBA 像素 -> 字元，含自動對比與透明度處理）
@@ -93,6 +95,7 @@ test/                 node:test 單元測試
 - 嚴格的 CSP（`default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; media-src 'self'`，部署版沒有 `connect-src`，頁面無法對外發出任何請求）：沒有行內腳本、沒有行內樣式、沒有第三方來源。
 - 使用者輸入（例如 `echo`）一律跳脫；只有 `https://` 連結會被渲染成 `<a>`，且帶 `rel="noopener noreferrer"`。
 - 排版：終端機與細節用等寬字；只有大名字與標題用系統無襯線字（`--display`），名字用 `clamp()` 流體縮放（手機 40px → 寬螢幕 68px），320px 也不會溢出；e2e 逐寬度驗證。
+- **閱讀窗格**：右側預設一次顯示一頁（`mode page`）。頂端的位置列有「上一頁／下一頁」與麵包屑（`~ / projects / vox-proof`，前面的部分可點）。每一頁都有自己的網址：`#projects/<名稱>`、`#works/<名稱>`、`#gallery/<名稱>`、`#photos/<名稱>`，另有 `#about`、`#projects`、`#works`、`#gallery`、`#photos`、`#skills`、`#contact`、`#help`（舊的 `#works` 之類連結照常可用）；瀏覽器的上一頁／下一頁、手動改網址、分享連結都能回到同一頁，分頁標題也跟著變。切換語言會用新語言重新顯示目前這一頁。`theme`、`lang` 這類「動作」指令的輸出會加在頁面下方，不會取代頁面；`clear` 清空窗格並回到 `~`。對應的純函式在 `src/route.js`（`test/route.test.mjs`），e2e 在「reader pane」與「contact sheets」兩段。注意：`#` 後面的網址搜尋引擎不會各自收錄，`sitemap.xml` 因此只有首頁。
 - Dock 導覽（寬螢幕＋滑鼠）：浮在畫面底部中央，取代快速指令按鈕；滑鼠靠近時圖示放大（只用 transform，不會讓版面位移），鍵盤聚焦也會放大，減少動態時不放大；窄螢幕與觸控維持原本的按鈕。終端機與概覽會自動讓出 dock 的高度（`--dock-h`），「已複製」提示也在 dock 上方。
 - 狀態列（終端機視窗底部）顯示版本號與「0 cookies · 0 trackers · 0 dependencies」，每一句都有測試把關（`test/status.test.mjs`）：`package.json` 沒有任何 dependencies、`src/` 只有相對路徑的 import、程式碼不碰 cookie、沒有任何網路請求且 CSP 不允許外部主機。改版本號時要同時改 `package.json`、`src/content.js` 的 `VERSION` 與 `index.html`（測試會提醒）。
 - 不使用外部字型、不做任何分析或追蹤。`localStorage` 的讀寫都包了 try/catch。

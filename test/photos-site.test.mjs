@@ -65,13 +65,14 @@ test('without photos: no photos command, no mention in help, nothing changes', a
 test('the real site: the photographs are live, in order, with their shooting details', async () => {
   const { gallery } = await import('../src/content.js');
   const { execute, HAS_PHOTOS, PUBLIC_COMMANDS } = await import('../src/engine.js');
+  const { renderEntry } = await import('../src/render.js');
   const photos = gallery.map((g, i) => [g, i]).filter(([g]) => isPhoto(g));
   assert.equal(HAS_PHOTOS, photos.length > 0);
   assert.equal(photos.length, 12, 'all twelve chosen photographs');
   assert.ok(PUBLIC_COMMANDS.includes('photos'));
   assert.deepEqual(photos.map(([, i]) => i + 1), Array.from({ length: 12 }, (_, i) => i + 5), 'they come after the four project pictures');
-  const list = execute('photos', ctx()).blocks;
-  for (const [g, i] of photos) assert.ok(textOf(list).includes(`view ${i + 1}`) && textOf(list).includes(g.en.title), g.slug);
+  const list = renderEntry(execute('photos', ctx()).blocks, {});
+  for (const [g, i] of photos) assert.ok(list.includes(`data-cmd="view ${i + 1}"`) && list.includes(g.en.title) && list.includes(`data-open="${i + 1}"`), g.slug);
   const first = execute('view 5', ctx()).blocks.find((b) => b.t === 'image');
   assert.match(first.shot, /^NIKON Z 6 · NIKKOR Z 35mm f\/1\.8 S · 35 mm · f\/1\.8 · 1\/3200 s · ISO 100$/);
   for (const [g] of photos) assert.deepEqual(shotProblems(g.shot), [], g.slug);
@@ -81,22 +82,22 @@ test('with photos: the command, aliases, help and completion appear', async () =
   const site = await siteWithPhotos();
   try {
     const { execute, PUBLIC_COMMANDS, HAS_PHOTOS, complete } = await site.load('src/engine.js');
+    const { renderEntry } = await site.load('src/render.js');
     assert.equal(HAS_PHOTOS, true);
     assert.deepEqual(PUBLIC_COMMANDS.slice(0, 6), ['about', 'projects', 'works', 'gallery', 'photos', 'view']);
     for (const name of ['photos', 'photo', 'photography']) {
       const out = execute(name, ctx());
       assert.equal(out.blocks[0].v, 'photos', name);
-      const items = out.blocks[1].items ?? out.blocks[1].v;
-      const text = textOf(out.blocks);
-      assert.ok(text.includes('5. Photo 1 title') && text.includes('6. Photo 2 title'), `${name}: numbers continue the gallery's (5, 6)`);
-      assert.ok(!text.includes('A black hole, prepared'), `${name}: only photos`);
-      assert.ok(text.includes('view 5'), `${name}: the hint points at the first photo`);
-      assert.ok(items);
+      const html = renderEntry(out.blocks, {});
+      assert.ok(html.includes('5. Photo 1 title') && html.includes('6. Photo 2 title'), `${name}: numbers continue the gallery's (5, 6)`);
+      assert.ok(!html.includes('A black hole, prepared'), `${name}: only photos`);
+      assert.ok(html.includes('view 5'), `${name}: the hint points at the first photo`);
+      assert.ok(html.includes('class="sheet"') && html.includes('data-open="5"'), `${name}: a contact sheet`);
     }
     assert.ok(textOf(execute('help', ctx()).blocks).includes('my photographs'));
     assert.ok(textOf(execute('help', ctx('zh')).blocks).includes('我的攝影'));
     assert.ok(JSON.stringify(complete('pho', ctx())).includes('photos'));
-    const zh = textOf(execute('photos', ctx('zh')).blocks);
+    const zh = renderEntry(execute('photos', ctx('zh')).blocks, {});
     assert.ok(zh.includes('照片 1 標題') && zh.includes('每張照片下方有拍攝資訊'));
   } finally { site.done(); }
 });
@@ -105,7 +106,8 @@ test('with photos: `gallery` shows two labelled groups and `view` carries the sh
   const site = await siteWithPhotos();
   try {
     const { execute } = await site.load('src/engine.js');
-    const g = textOf(execute('gallery', ctx()).blocks);
+    const { renderEntry: render } = await site.load('src/render.js');
+    const g = render(execute('gallery', ctx()).blocks, {});
     assert.ok(g.indexOf('from my projects') < g.indexOf('1. A black hole') && g.indexOf('4. ') < g.indexOf('photographs') && g.indexOf('photographs') < g.indexOf('5. Photo 1 title'));
     const view = execute('view 5', ctx()).blocks.find((b) => b.t === 'image');
     assert.equal(view.shot, 'TESTCO One · TEST 50mm F1.8 · 50 mm · f/1.8 · 1/250 s · ISO 100');

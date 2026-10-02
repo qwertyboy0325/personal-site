@@ -12,11 +12,13 @@ import { isPhoto, formatShot } from './photos.js';
 
 /** Photography only appears (command, help, aliases) once there is at least one photo in the gallery. */
 export const HAS_PHOTOS = gallery.some(isPhoto);
-export const PUBLIC_COMMANDS = ['about', 'projects', 'works', 'gallery', ...(HAS_PHOTOS ? ['photos'] : []), 'view', 'skills', 'contact', 'ls', 'cat', 'open', 'theme', 'lang', 'ascii', '3d', 'fx', 'transition', 'cursor', 'hud', 'clear', 'history', 'help'];
-const HIDDEN_COMMANDS = ['project', 'work', 'whoami', 'date', 'echo', 'neofetch', 'sudo', 'exit'];
-const ALIASES = { face: 'ascii', gui: 'hud', images: 'gallery', pictures: 'gallery', ...(HAS_PHOTOS ? { photo: 'photos', photography: 'photos' } : {}), repos: 'projects', '?': 'help', man: 'help', cls: 'clear', dir: 'ls', ll: 'ls' };
+export const PUBLIC_COMMANDS = ['about', 'projects', 'works', 'gallery', ...(HAS_PHOTOS ? ['photos'] : []), 'view', 'skills', 'contact', 'ls', 'cat', 'open', 'theme', 'lang', 'ascii', '3d', 'fx', 'transition', 'cursor', 'hud', 'mode', 'clear', 'history', 'help'];
+const HIDDEN_COMMANDS = ['home', 'project', 'work', 'whoami', 'date', 'echo', 'neofetch', 'sudo', 'exit'];
+const ALIASES = { '~': 'home', face: 'ascii', gui: 'hud', images: 'gallery', pictures: 'gallery', ...(HAS_PHOTOS ? { photo: 'photos', photography: 'photos' } : {}), repos: 'projects', '?': 'help', man: 'help', cls: 'clear', dir: 'ls', ll: 'ls' };
 /** Commands whose output is addressable through the URL hash. */
 export const HUD_MODES = ['on', 'off'];
+/** `page`: each page replaces the last (like a document); `log`: every command's output stays and scrolls (like a classic terminal). */
+export const LAYOUT_MODES = ['page', 'log'];
 /** Typing a shape's name on its own (`cube`) is a shortcut for `3d cube`. */
 const SHAPE_ALIASES = { donut: 'donut', torus: 'donut', cube: 'cube', sphere: 'sphere' };
 export const NAV = new Set(['about', 'projects', 'works', 'gallery', 'skills', 'contact', 'help']);
@@ -43,6 +45,13 @@ export function parse(line) {
   for (let m; (m = re.exec(line)); ) tokens.push(m[1] ?? m[2] ?? m[3]);
   const [name = '', ...args] = tokens;
   return { name: name.toLowerCase(), args };
+}
+
+/** The canonical command name and arguments for a line, after aliases (`pictures` -> `gallery`, `~` -> `home`). */
+export function resolveCommand(line) {
+  const { name, args } = parse(line);
+  if (Object.hasOwn(SHAPE_ALIASES, name)) return { name: '3d', args: [SHAPE_ALIASES[name]] };
+  return { name: ALIASES[name] ?? name, args };
 }
 
 function distance(a, b) {
@@ -127,10 +136,14 @@ const findView = (q) => {
 
 const firstSentence = (text) => text.match(/^.*?[.。]/)?.[0] ?? text;
 
-/** A numbered, clickable list of gallery entries; the numbers are the entries' positions in the whole gallery (what `view` takes). */
+/** A contact sheet of gallery entries: thumbnails that open the picture viewer, each with its title as a link to the full page. The numbers are the entries' positions in the whole gallery (what `view` takes). */
 function pictureList(entries, ctx) {
   const t = T(ctx);
-  return ul(entries.map(([g, i]) => [{ cmd: `view ${i + 1}`, text: `${i + 1}. ${g[ctx.lang].title}${g.kind === 'video' ? ` ▶ ${t.viewer.play}` : ''}` }, { sub: firstSentence(g[ctx.lang].caption) }]));
+  return {
+    t: 'sheet',
+    open: t.viewer.open,
+    items: entries.map(([g, i]) => ({ index: i + 1, slug: g.slug, thumb: g.thumb, width: g.thumbWidth, height: g.thumbHeight, title: g[ctx.lang].title, play: g.kind === 'video' ? t.viewer.play : null })),
+  };
 }
 
 function galleryBlocks(ctx) {
@@ -239,6 +252,7 @@ const commands = {
       blocks: [h(t.helpTitle), kv(PUBLIC_COMMANDS.map((n) => [label(n), t.cmds[n]])), p(...t.helpFooter)],
     };
   },
+  home: (_a, ctx) => ({ blocks: welcomeBlocks(ctx) }),
   about: (_a, ctx) => ({ blocks: aboutBlocks(ctx) }),
   skills: (_a, ctx) => ({ blocks: skillsBlocks(ctx) }),
   contact: (_a, ctx) => ({ blocks: contactBlocks(ctx) }),
@@ -342,6 +356,15 @@ const commands = {
     const q = args[0].toLowerCase();
     if (!HUD_MODES.includes(q)) return { blocks: [err(t.hudBad(args[0], all))] };
     return { blocks: [p({ ok: t.hudSet(q) })], effects: [{ type: 'hud', value: q }] };
+  },
+
+  mode(args, ctx) {
+    const t = T(ctx);
+    const all = LAYOUT_MODES.join(', ');
+    if (!args.length) return { blocks: [p(t.modeCurrent(ctx.mode ?? 'page', all))] };
+    const q = args[0].toLowerCase();
+    if (!LAYOUT_MODES.includes(q)) return { blocks: [err(t.modeBad(args[0], all))] };
+    return { blocks: [p({ ok: t.modeSet(q) })], effects: [{ type: 'mode', value: q }] };
   },
 
   cursor(args, ctx) {
@@ -455,6 +478,7 @@ function argCandidates(cmd) {
     case '3d': return SHAPES;
     case 'cursor': return CURSOR_MODES;
     case 'hud': return HUD_MODES;
+    case 'mode': return LAYOUT_MODES;
     case 'cat': return [...FILES, 'projects/', ...projectNames.map((s) => `projects/${s}`)];
     case 'ls': return ['projects'];
     case 'open': return ['github', ...projectNames];

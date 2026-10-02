@@ -342,7 +342,7 @@ try {
   check((await ev(`document.querySelector('#hud-right .recent-btn')?.dataset.cmd`)) === 'work 1', 'the recent list shows the newest command first');
   await ev(`[...document.querySelectorAll('#hud-right .recent-btn')].find(b => b.dataset.cmd === 'project 2').click()`);
   await sleep(150);
-  check((await ev(`[...document.querySelectorAll('#log .typed')].filter(e => e.textContent === 'project 2').length`)) >= 2, 'recent commands can be re-run with one click');
+  check((await ev(`[...document.querySelectorAll('#log .typed')].some(e => e.textContent === 'project 2') && location.hash`)) === '#projects/vox-proof', 'recent commands can be re-run with one click (the page for it is shown)');
 
   console.log('language and theme reach the overview');
   await typeText('lang zh'); await enter();
@@ -524,6 +524,7 @@ try {
   await shot('22-image-real', 1300);
 
   console.log('floating picture windows (wide screens with a mouse)');
+  await typeText('mode log'); await enter(); // these checks open several pictures from one scrolling log
   const opener = `document.querySelector('#log .shot-open')`;
   const wins = () => ev(`document.querySelectorAll('#windows .win').length`);
   const winProp = (n, expr) => ev(`(() => { const w = document.querySelectorAll('#windows .win')[${n}]; return w ? (${expr}) : null; })()`);
@@ -910,6 +911,7 @@ try {
   await until(async () => (await logText()).includes('黑洞光線渲染器'), 3000, 'zh works');
   check((await logText()).includes('視覺與 3D'), 'works are available in Traditional Chinese');
   await ev(`localStorage.clear()`);
+  await load('about:blank'); // a real page load (the same address would only be a no-op in the running page)
   await load(`${BASE}#works`);
   await bootDone();
   check((await logText()).includes('Black hole renderer'), 'the #works deep link opens the list');
@@ -1126,6 +1128,147 @@ try {
     await rm(lrDir, { recursive: true, force: true }).catch(() => {});
   }
 
+  console.log('reader pane: one page at a time, location bar, an address for every page');
+  await viewport(1440, 900);
+  await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }, { name: 'prefers-reduced-motion', value: 'no-preference' }] });
+  await load('about:blank'); await load(BASE); await bootDone();
+  await ev(`localStorage.clear()`);
+  await load('about:blank'); await load(BASE); await bootDone();
+  const rp0 = () => ev(`(() => { const t = (s) => document.querySelector(s); return { entries: document.querySelectorAll('#log > .entry').length, crumbs: [...document.querySelectorAll('#crumb-path li')].map((li) => li.textContent).join(' / '), current: t('#crumb-path li[aria-current="page"]')?.textContent, buttons: [...document.querySelectorAll('#crumb-path button')].map((b) => b.dataset.cmd).join(), back: !t('#crumb-back').disabled, fwd: !t('#crumb-fwd').disabled, hash: location.hash, title: document.title, h2: [...document.querySelectorAll('#log h2.h')].map((h) => h.textContent).join('|'), top: Math.round(document.getElementById('screen').scrollTop), label: t('#crumbs').getAttribute('aria-label'), shown: getComputedStyle(t('#crumbs')).visibility, len: history.length }; })()`);
+  const home = await rp0();
+  check(home.crumbs === '~' && !home.back && !home.fwd && home.shown === 'visible' && home.label === 'Location', 'the location bar starts at ~ with Back and Forward off', JSON.stringify(home));
+  await typeText('projects'); await enter();
+  await until(async () => (await rp0()).h2 === 'projects', 3000, 'projects page');
+  const pj = await rp0();
+  check(pj.entries === 1 && pj.crumbs === '~ / projects' && pj.hash === '#projects' && pj.back && !pj.fwd && pj.title.startsWith('Projects — Ezra Wu') && pj.top === 0, 'a page replaces the one before it, and the bar, address and tab title follow', JSON.stringify(pj));
+  check(pj.buttons === 'home' && pj.current === 'projects', 'the earlier parts of the path are buttons, the current page is marked');
+  // Open an entry from the overview card
+  await ev(`document.querySelector('#gui [data-cmd="project 2"]').click()`);
+  await until(async () => (await rp0()).h2 === 'vox-proof', 3000, 'project page');
+  const pr = await rp0();
+  check(pr.entries === 1 && pr.crumbs === '~ / projects / vox-proof' && pr.hash === '#projects/vox-proof' && pr.title.startsWith('vox-proof — Ezra Wu'), 'one entry has its own address and a three-part path', JSON.stringify(pr));
+  check(!(await logText()).includes('Making sure messages between systems'), 'the earlier page is really gone from the pane');
+  // The path is clickable
+  await ev(`document.querySelector('#crumb-path button[data-cmd="projects"]').click()`);
+  await until(async () => (await rp0()).hash === '#projects' && (await rp0()).h2 === 'projects', 3000, 'crumb to projects');
+  check(true, 'clicking a part of the path goes there');
+  const lenBefore = (await rp0()).len;
+  await ev(`document.querySelector('#crumb-path button[data-cmd="projects"]') || document.querySelector('#crumb-path li[aria-current] ')`);
+  await typeText('projects'); await enter(); await sleep(300);
+  check((await rp0()).len === lenBefore && (await rp0()).entries === 1, 'showing the same page again does not add another history entry');
+  // Back / Forward
+  await ev(`document.getElementById('crumb-back').click()`);
+  await until(async () => (await rp0()).hash === '#projects/vox-proof', 3000, 'back');
+  const bk = await rp0();
+  check(bk.h2 === 'vox-proof' && bk.entries === 1 && bk.fwd && bk.back, 'Back shows the page you came from; Forward is available', JSON.stringify(bk));
+  await ev(`history.back()`);
+  await until(async () => (await rp0()).hash === '#projects', 3000, 'browser back');
+  check((await rp0()).h2 === 'projects', "the browser's own Back button works too");
+  await ev(`document.getElementById('crumb-fwd').click()`);
+  await until(async () => (await rp0()).hash === '#projects/vox-proof', 3000, 'forward');
+  check(true, 'Forward goes to the next page');
+  for (let i = 0; i < 8 && !(await ev(`document.getElementById('crumb-back').disabled`)); i++) { await ev(`document.getElementById('crumb-back').click()`); await sleep(250); }
+  await until(async () => (await rp0()).hash === '', 3000, 'back to home');
+  const back0 = await rp0();
+  check(back0.crumbs === '~' && !back0.back && back0.fwd && back0.title === 'Ezra Wu — Backend / Platform Engineer', 'all the way back is the home page, with the plain title', JSON.stringify(back0));
+  check(!(await ev(`[...document.querySelectorAll('#hud-right .recent-btn')].some((b) => b.dataset.cmd === 'home')`)), 'moving through history does not fill the recent-commands list');
+  // Typing a new address by hand
+  await ev(`location.hash = '#works/black-hole'`);
+  await until(async () => (await rp0()).h2.includes('Black hole renderer'), 3000, 'hand-typed address');
+  const hand = await rp0();
+  check(hand.crumbs === '~ / works / black-hole' && hand.back && !hand.fwd, 'an address typed by hand shows that page', JSON.stringify(hand));
+  await ev(`location.hash = '#works/nope'`);
+  await sleep(300);
+  check((await rp0()).h2.includes('Black hole renderer') && (await rp0()).hash === '#works/black-hole', 'an address that names no page leaves the current page alone, and the address is put right');
+  // Actions are added under the page, they do not replace it
+  await typeText('theme light'); await enter(); await sleep(900);
+  const act = await rp0();
+  check(act.hash === '#works/black-hole' && act.crumbs === '~ / works / black-hole' && act.h2.includes('Black hole renderer') && act.entries === 2, 'a command like theme is added below the page and the page stays', JSON.stringify(act));
+  await typeText('theme dark'); await enter(); await sleep(900);
+  // Language: the page is shown again in the new language
+  await typeText('lang zh'); await enter();
+  await until(async () => (await rp0()).label === '位置', 3000, 'zh location bar');
+  await sleep(800);
+  const zh = await rp0();
+  check(zh.h2.includes('黑洞光線渲染器') && zh.title.startsWith('黑洞光線渲染器 — Ezra Wu') && zh.hash === '#works/black-hole', 'switching language shows the same page in the new language', JSON.stringify(zh));
+  check((await ev(`document.getElementById('crumb-back').getAttribute('aria-label')`)) === '上一頁', 'and the Back button is named in Chinese');
+  await typeText('lang en'); await enter(); await sleep(900);
+  // mode log
+  await typeText('mode log'); await enter(); await sleep(300);
+  await typeText('about'); await enter(); await sleep(300);
+  await typeText('skills'); await enter(); await sleep(300);
+  const lg = await rp0();
+  check(lg.h2.includes('about') && lg.h2.includes('skills') && lg.hash === '#skills' && lg.crumbs === '~ / skills', 'mode log keeps every output and scrolls, while the location bar still follows', JSON.stringify(lg));
+  await typeText('mode page'); await enter(); await sleep(300);
+  await typeText('contact'); await enter(); await sleep(300);
+  check((await rp0()).entries === 1 && (await rp0()).crumbs === '~ / contact', 'mode page goes back to one page at a time');
+  // clear
+  await typeText('clear'); await enter(); await sleep(900);
+  const cl = await rp0();
+  check(cl.entries === 0 && cl.crumbs === '~' && cl.title === 'Ezra Wu — Backend / Platform Engineer', 'clear empties the pane and the bar goes back to ~', JSON.stringify(cl));
+  await typeText('home'); await enter(); await sleep(400);
+  check((await rp0()).entries === 1 && (await ev(`!!document.querySelector('#log [data-ascii-face]')`)), 'home shows the welcome screen again');
+  await shot('29-reader-pane', 300);
+  // Deep links
+  await load('about:blank'); await load(`${BASE}#projects/echlub`); await bootDone();
+  const dl = await rp0();
+  check(dl.h2 === 'echlub' && dl.entries === 1 && dl.crumbs === '~ / projects / echlub' && !dl.back, 'opening an address shows that page directly (no boot screen first)', JSON.stringify(dl));
+  await load('about:blank'); await load(`${BASE}#projects/nope`); await bootDone();
+  check((await rp0()).crumbs === '~' && (await ev(`!!document.querySelector('#log [data-ascii-face]')`)), 'an address that names no page opens the welcome screen');
+  // Keyboard
+  await load('about:blank'); await load(BASE); await bootDone();
+  await typeText('about'); await enter(); await sleep(300);
+  await ev(`document.getElementById('crumb-back').focus()`);
+  check(await ev(`document.activeElement.id === 'crumb-back' && document.getElementById('crumb-back').matches(':focus-visible')`), 'the Back button can be focused with the keyboard');
+  // Touch sizes and phone
+  await viewport(390, 844, true);
+  await load('about:blank'); await load(BASE); await bootDone();
+  await ev(`document.querySelector('.tab[data-view="gui"]').click()`);
+  await sleep(300);
+  await ev(`document.querySelector('#gui [data-cmd="project 1"]').click()`);
+  await until(async () => (await rp0()).hash === '#projects/handoff-semantics', 3000, 'phone card');
+  const phoneBar = await ev(`(() => { const r = (s) => document.querySelector(s).getBoundingClientRect(); return { term: document.documentElement.dataset.view, bar: Math.round(r('#crumbs').width), back: [Math.round(r('#crumb-back').width), Math.round(r('#crumb-back').height)], doc: document.documentElement.scrollWidth - innerWidth, path: Math.round(r('#crumb-path').right) <= innerWidth }; })()`);
+  check(phoneBar.term === 'term' && phoneBar.doc <= 0 && phoneBar.back[0] >= 44 && phoneBar.back[1] >= 44 && phoneBar.path, 'on a phone a card opens its page in the terminal view; the location bar fits and its buttons are touch-sized', JSON.stringify(phoneBar));
+  await shot('29-reader-phone', 300);
+  await viewport(1440, 900);
+
+  console.log('contact sheets');
+  await load('about:blank'); await load(BASE); await bootDone();
+  await typeText('photos'); await enter();
+  await until(() => ev(`document.querySelectorAll('#log .sheet-item').length === 12`), 3000, 'sheet');
+  await until(() => ev(`[...document.querySelectorAll('#log .sheet-img')].every((i) => i.complete && i.naturalWidth > 0)`), 20000, 'sheet thumbnails');
+  const sh = await ev(`(() => { const items = [...document.querySelectorAll('#log .sheet-item')]; const cells = items.map((i) => { const b = i.querySelector('.sheet-open').getBoundingClientRect(); return [Math.round(b.width), Math.round(b.height)]; }); const pane = document.getElementById('screen').getBoundingClientRect(); const right = Math.max(...items.map((i) => i.getBoundingClientRect().right)); return { n: items.length, cells, firstRow: items.filter((i) => Math.abs(i.getBoundingClientRect().top - items[0].getBoundingClientRect().top) < 2).length, inside: right <= pane.right + 1, doc: document.documentElement.scrollWidth - innerWidth, play: document.querySelectorAll('#log .sheet .shot-play').length, bad: items.filter((i) => { const m = i.querySelector('img'); return m.getAttribute('width') !== String(m.naturalWidth) || m.getAttribute('height') !== String(m.naturalHeight); }).length }; })()`);
+  check(sh.n === 12 && sh.cells.every((c) => Math.abs(c[0] - sh.cells[0][0]) <= 1 && Math.abs(c[1] - sh.cells[0][1]) <= 1) && sh.firstRow >= 4 && sh.inside && sh.doc <= 0 && sh.bad === 0, 'photos is a grid of twelve equal thumbnails with exact declared sizes, inside the pane', JSON.stringify(sh));
+  await shot('29-contact-sheet', 1800);
+  // The thumbnail opens the viewer; the caption opens the page.
+  const hashBefore = await ev(`location.hash`);
+  await ev(`document.querySelector('#log .sheet-open[data-open="6"]').click()`);
+  await until(() => ev(`!!document.querySelector('#windows .win')`), 3000, 'sheet opens the viewer');
+  check((await ev(`location.hash`)) === hashBefore && (await ev(`document.querySelector('#windows .win .wtitle').textContent`)) === 'photo-looking-back.jpg', 'a thumbnail opens that picture in the viewer without leaving the page');
+  await ev(`document.querySelector('#windows .win').focus()`);
+  await key('Escape', 'Escape', 27);
+  await ev(`document.querySelector('#log .sheet-item [data-cmd="view 6"]').click()`);
+  await until(async () => (await ev(`location.hash`)) === '#photos/photo-looking-back', 3000, 'caption opens the page');
+  const photoPage = await ev(`(() => ({ crumbs: [...document.querySelectorAll('#crumb-path li')].map((l) => l.textContent).join(' / '), figW: Math.round(document.querySelector('#log figure.shot').getBoundingClientRect().width), pane: Math.round(document.getElementById('screen').getBoundingClientRect().width) }))()`);
+  check(photoPage.crumbs === '~ / photos / photo-looking-back' && photoPage.figW > 560, "a photo's own page has its address, and the picture now uses the pane's width", JSON.stringify(photoPage));
+  await shot('29-photo-page', 1500);
+  await typeText('gallery'); await enter();
+  await until(() => ev(`document.querySelectorAll('#log .sheet').length === 2`), 3000, 'gallery sheets');
+  const gl = await ev(`(() => ({ items: document.querySelectorAll('#log .sheet-item').length, play: document.querySelectorAll('#log .sheet .shot-play').length, labels: [...document.querySelectorAll('#log .entry > p .dim')].map((d) => d.textContent).join('|') }))()`);
+  check(gl.items === 16 && gl.play === 1 && gl.labels.includes('from my projects') && gl.labels.includes('photographs'), 'gallery shows its two groups as sheets, the video marked', JSON.stringify(gl));
+  // narrow screens
+  for (const w of [820, 390]) {
+    await viewport(w, 900, w < 500);
+    await load('about:blank'); await load(BASE); await bootDone();
+    if (w < 1000) await ev(`document.querySelector('.tab[data-view="term"]')?.click()`);
+    await typeText('photos'); await enter();
+    await until(() => ev(`document.querySelectorAll('#log .sheet-item').length === 12`), 3000, 'sheet narrow');
+    const nr = await ev(`(() => { const items = [...document.querySelectorAll('#log .sheet-item')]; const pane = document.getElementById('screen').getBoundingClientRect(); return { cols: items.filter((i) => Math.abs(i.getBoundingClientRect().top - items[0].getBoundingClientRect().top) < 2).length, inside: Math.max(...items.map((i) => i.getBoundingClientRect().right)) <= pane.right + 1, doc: document.documentElement.scrollWidth - innerWidth, w: Math.round(items[0].getBoundingClientRect().width) }; })()`);
+    check(nr.inside && nr.doc <= 0 && nr.cols >= 2 && nr.w >= 100, `the contact sheet fits at ${w}px (${nr.cols} columns)`, JSON.stringify(nr));
+    if (w === 390) await shot('29-contact-sheet-phone', 400);
+  }
+  await viewport(1440, 900);
+
   console.log('photography (the real photographs)');
   await viewport(1440, 900);
   await load('about:blank'); await load(BASE); await bootDone();
@@ -1150,9 +1293,9 @@ try {
   await key('Escape', 'Escape', 27);
   // The portrait photos
   await typeText('view 12'); await enter();
-  await until(() => ev(`[...document.querySelectorAll('#log figure.shot')].length >= 2`), 3000, 'portrait figure');
+  await until(() => ev(`!!document.querySelector('#log figure.shot')`), 3000, 'portrait figure');
   await sleep(1600);
-  await ev(`[...document.querySelectorAll('#log .shot-open')].at(-1).click()`);
+  await ev(`document.querySelector('#log .shot-open').click()`);
   await until(() => ev(`!!document.querySelector('#windows .win .exif')`), 3000, 'portrait window');
   await until(() => ev(`(() => { const i = document.querySelector('#windows .wstage img'); return i.complete && i.naturalWidth > 0; })()`), 10000, 'portrait loaded');
   const portrait = await ev(`(() => { const w = document.querySelector('#windows .win'); const r = w.getBoundingClientRect(); return { meta: w.querySelector('.wmeta').textContent, inside: r.top >= 0 && r.bottom <= innerHeight, } })()`);
@@ -1262,7 +1405,9 @@ try {
       await until(async () => (await logText()).includes('測試照片 2'), 3000, 'zh photos');
       check((await logText()).includes('每張照片下方有拍攝資訊') && (await ev(`document.querySelector('#g-photos').textContent`)) === '// 攝影', 'photography is available in Traditional Chinese');
       await typeText('lang en'); await enter(); await sleep(700);
-      // Contrast of the details line in every theme
+      // Contrast of the details line in every theme (it is on a photo's own page)
+      await typeText('view 5'); await enter();
+      await until(() => ev(`!!document.querySelector('#log .exif')`), 3000, 'details line');
       for (const theme of ['dark', 'light', 'amber', 'matrix']) {
         await typeText(`theme ${theme}`); await enter(); await sleep(700);
         // The details line is drawn in --accent on the panel colour: resolve both through probe elements (computed values come back as rgb()).

@@ -76,6 +76,15 @@ export function block(b, o = DEFAULTS) {
         + '</button>'
         + `<figcaption><strong>${esc(b.title)}</strong> <span class="dim">${esc(b.caption)}</span>${b.shot ? `<span class="exif">${esc(b.shot)}</span>` : ''}</figcaption></figure>`;
     }
+    case 'sheet': {
+      // A contact sheet: thumbnails open the picture viewer; the caption under each is a link to its full page.
+      const img = (i, alt) => `<img class="sheet-img" src="${esc(i.thumb)}" width="${esc(i.width)}" height="${esc(i.height)}" alt="${esc(alt)}" loading="lazy" decoding="async">`;
+      return `<ul class="sheet">${b.items.map((i) => {
+        const caption = seg({ cmd: `view ${i.index}`, text: `${i.index}. ${i.title}${i.play ? ` ▶ ${i.play}` : ''}` }, opts);
+        if (opts.interactive === false) return `<li class="sheet-item">${img(i, i.title)}${caption}</li>`; // no JavaScript: a plain picture
+        return `<li class="sheet-item"><button type="button" class="sheet-open" data-open="${esc(i.index)}" aria-label="${esc(b.open ?? 'Open larger')}: ${esc(i.title)}">${img(i, '')}${i.play ? '<span class="shot-play" aria-hidden="true">▶</span>' : ''}</button>${caption}</li>`;
+      }).join('')}</ul>`;
+    }
     case 'ascii3d':
       return `<pre class="art ascii3d" role="img" aria-label="${esc(b.label ?? 'ASCII 3D model')}" data-ascii3d data-shape="${esc(b.shape ?? 'donut')}">${esc(b.v)}</pre>`;
     case 'row':

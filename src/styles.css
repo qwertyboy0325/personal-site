@@ -543,7 +543,7 @@ html.rt-on input { cursor: text; }
 @media (max-width: 420px) { #hud-left { grid-template-columns: 1fr; } }
 
 /* ---- pictures: drawn as ASCII first, then the real image (src/main.js, src/fx/imgascii.js) ---- */
-.shot { margin: 8px 0; max-width: 460px; }
+.shot { margin: 8px 0; max-width: min(100%, 720px); } /* uses the pane's width: the pictures are the point */
 .shot-open { position: relative; display: block; width: 100%; padding: 0; overflow: hidden; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; cursor: zoom-in; transition: border-color 0.15s; }
 .shot-open:hover, .shot-open:focus-visible { border-color: var(--accent); }
 .shot-img { display: block; width: 100%; height: auto; }
@@ -557,6 +557,31 @@ html.rt-on input { cursor: text; }
 .gthumb-wrap img { display: block; width: 100%; height: auto; }
 .ggallery { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
 .gphotos { align-items: start; } /* photos have different shapes: each card hugs its own picture instead of stretching to the tallest one */
+
+/* ---- location bar: back / forward and where you are (src/route.js, main.js) ---- */
+.crumbs { display: flex; align-items: center; gap: 8px; flex: none; padding: 5px 12px; font-size: 13px; background: var(--bar); border-bottom: 1px solid var(--line); }
+/* Revealed by JS a moment after first paint: keep its space (invisible) so the terminal does not jump. */
+html[data-hud] .crumbs[hidden] { display: flex !important; visibility: hidden; }
+.crumb-step { flex: none; min-width: 32px; min-height: 32px; padding: 0; font: inherit; font-size: 18px; line-height: 1; color: var(--fg); background: transparent; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; transition: border-color 0.15s, color 0.15s; }
+.crumb-step:hover:not(:disabled), .crumb-step:focus-visible { color: var(--accent); border-color: var(--accent); }
+.crumb-step:disabled { opacity: 0.35; cursor: default; }
+.crumb-path { display: flex; flex-wrap: wrap; align-items: center; min-width: 0; margin: 0; padding: 0; list-style: none; }
+.crumb-path li { min-width: 0; overflow-wrap: anywhere; }
+.crumb-path li + li::before { content: "/"; margin: 0 6px; color: var(--dim); }
+.crumb-path li[aria-current="page"] { color: var(--fg); font-weight: 700; }
+.crumb { padding: 4px 2px; font: inherit; color: var(--accent); background: none; border: 0; cursor: pointer; text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent); text-underline-offset: 3px; }
+.crumb:hover, .crumb:focus-visible { text-decoration-color: currentColor; }
+@media (pointer: coarse), (max-width: 640px) { .crumb-step { min-width: 44px; min-height: 44px; } .crumb { min-height: 44px; } }
+@media print { .crumbs { display: none !important; } }
+
+/* ---- contact sheet: thumbnails that open the viewer, captions that open the page ---- */
+.sheet { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 12px 10px; margin: 8px 0; padding: 0; list-style: none; }
+.sheet-item { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.sheet-open { position: relative; display: block; width: 100%; aspect-ratio: 3 / 2; padding: 0; overflow: hidden; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; cursor: zoom-in; transition: border-color 0.15s; }
+.sheet-open:hover, .sheet-open:focus-visible { border-color: var(--accent); }
+.sheet-img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.sheet-item .cmd { align-self: flex-start; text-align: left; font-size: 12px; line-height: 1.4; }
+.sheet .shot-play { right: 6px; bottom: 6px; width: 28px; height: 28px; font-size: 11px; }
 
 /* ---- viewer window (src/lightbox.js) -------------------------------------------------------- */
 .viewer { width: min(92vw, 860px); max-height: 92vh; max-height: 92dvh; padding: 0; overflow: hidden; color: var(--fg); background: var(--panel); border: 1px solid var(--accent); border-radius: 10px; box-shadow: 0 30px 90px rgba(0, 0, 0, 0.7); }
