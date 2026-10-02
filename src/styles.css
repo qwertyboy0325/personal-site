@@ -547,7 +547,7 @@ html.rt-on input { cursor: text; }
 .shot-open { position: relative; display: block; width: 100%; padding: 0; overflow: hidden; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; cursor: zoom-in; transition: border-color 0.15s; }
 .shot-open:hover, .shot-open:focus-visible { border-color: var(--accent); }
 .shot-img { display: block; width: 100%; height: auto; }
-.entry .shot-ascii { position: absolute; inset: 0; margin: 0; overflow: hidden; white-space: pre; font-family: inherit; color: var(--accent); background: var(--panel); }
+.entry .shot-ascii { position: absolute; inset: 0; margin: 0; overflow: hidden; white-space: pre; text-align: left; letter-spacing: 0; font-family: var(--font); font-weight: 400; color: var(--accent); background: var(--panel); } /* it sits inside a <button>: say the font and alignment outright, or it falls back to the button's own (a proportional font, centred) and no longer lines up with the picture */
 .shot.is-ascii .shot-img { visibility: hidden; }
 .shot-play { position: absolute; right: 10px; bottom: 10px; width: 36px; height: 36px; display: grid; place-items: center; font-size: 14px; color: var(--bg); background: var(--accent); border-radius: 50%; pointer-events: none; }
 .exif { display: block; margin-top: 4px; font-size: 11px; letter-spacing: 0.03em; color: var(--accent); }

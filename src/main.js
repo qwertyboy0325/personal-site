@@ -13,7 +13,7 @@ import { createGui } from './gui.js';
 import { createLightbox } from './lightbox.js';
 import { createDock } from './dock.js';
 import { createWindows } from './windows.js';
-import { asciiFromImage } from './fx/imgascii.js';
+import { asciiFromImage, asciiColumns } from './fx/imgascii.js';
 
 const $ = (id) => document.getElementById(id);
 const log = $('log');
@@ -202,7 +202,6 @@ function startNewFaces() {
   }
 }
 
-const ASCII_COLS = 64;
 const ASCII_HOLD_MS = 1000;
 
 /** A picture first appears as ASCII art made from its own pixels, then dissolves into the real image. */
@@ -214,13 +213,14 @@ async function animateImage(fig) {
     fig.classList.add('is-ascii'); // hide the real image (it keeps its space, so nothing jumps)
     await img.decode();
     const box = img.getBoundingClientRect();
-    const text = asciiFromImage(img, { cols: ASCII_COLS, invert: ctx().theme === 'light' });
+    const cols = asciiColumns(box.width); // denser for bigger pictures, but always clearly letters
+    const text = asciiFromImage(img, { cols, invert: ctx().theme === 'light' });
     pre.textContent = text;
-    // Size the text so ASCII_COLS characters span the image exactly, using this font's real character width.
+    // Size the text so `cols` characters span the image exactly, using this font's real character width.
     const probe = document.createElement('canvas').getContext('2d');
     probe.font = `100px ${getComputedStyle(pre).fontFamily}`;
     const charWidth = (probe.measureText('M').width || 60) / 100; // as a fraction of the font size
-    pre.style.fontSize = `${box.width / (ASCII_COLS * charWidth)}px`;
+    pre.style.fontSize = `${box.width / (cols * charWidth)}px`;
     pre.style.lineHeight = `${box.height / text.split('\n').length}px`;
     pre.hidden = false;
     await new Promise((r) => setTimeout(r, ASCII_HOLD_MS));

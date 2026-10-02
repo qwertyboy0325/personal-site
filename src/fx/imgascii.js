@@ -7,6 +7,17 @@ export const IMG_RAMP = ' .:-=+*#%@';
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
 /**
+ * How many characters per row for a picture `widthPx` wide on screen. About one character per 7 px:
+ * detailed enough to recognise the picture, still clearly made of letters. Clamped so a tiny
+ * picture is not mush and a huge one is not a wall of text.
+ */
+export function asciiColumns(widthPx, { cell = 7, min = 40, max = 110 } = {}) {
+  const w = Number(widthPx);
+  if (!Number.isFinite(w) || w <= 0) return min;
+  return clamp(Math.round(w / cell), min, max);
+}
+
+/**
  * @param {{ data: ArrayLike<number>, width: number, height: number }} px  RGBA pixels
  * @param {object} [o]
  * @param {number} [o.cols=64]        characters per row
@@ -14,8 +25,10 @@ const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
  * @param {boolean} [o.invert=false]  bright pixels use the sparse end (dark text on a light page)
  * @param {number} [o.cellAspect=0.5] width / height of one character cell
  * @param {boolean} [o.stretch=true]  stretch the contrast so flat images still show detail
+ * @param {number} [o.detail=0]       0..2: sharpen by this much (a character is compared with its neighbours, so outlines and faces stand out)
+ * @param {number} [o.clip=0]         0..0.2: ignore this share of the darkest and brightest cells when stretching (one glare spot must not wash out the picture)
  */
-export function imageToAscii(px, { cols = 64, ramp = IMG_RAMP, invert = false, cellAspect = 0.5, stretch = true } = {}) {
+export function imageToAscii(px, { cols = 64, ramp = IMG_RAMP, invert = false, cellAspect = 0.5, stretch = true, detail = 0, clip = 0 } = {}) {
   const { data, width, height } = px ?? {};
   if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1) throw new RangeError('image needs a positive integer width and height');
   if (!data || data.length < width * height * 4) throw new RangeError('pixel data is shorter than width x height x 4');
@@ -45,12 +58,45 @@ export function imageToAscii(px, { cols = 64, ramp = IMG_RAMP, invert = false, c
     }
   }
 
+  // Unsharp mask: push every cell away from the average of its neighbours, so edges and shapes survive the coarse grid.
+  const amount = Number.isFinite(detail) ? clamp(detail, 0, 2) : 0;
+  if (amount > 0) {
+    const radius = 3;
+    const blur = (src, w, h, horizontal) => {
+      const out = new Float64Array(src.length);
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          let sum = 0;
+          let n = 0;
+          for (let d = -radius; d <= radius; d++) {
+            const xx = horizontal ? x + d : x;
+            const yy = horizontal ? y : y + d;
+            if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue;
+            sum += src[yy * w + xx];
+            n++;
+          }
+          out[y * w + x] = sum / n;
+        }
+      }
+      return out;
+    };
+    const mean = blur(blur(lum, c, r, true), c, r, false);
+    for (let i = 0; i < lum.length; i++) lum[i] = lum[i] + amount * (lum[i] - mean[i]);
+  }
+
   let lo = 0;
   let hi = 1;
   if (stretch) {
-    lo = Infinity;
-    hi = -Infinity;
-    for (const v of lum) { if (v < lo) lo = v; if (v > hi) hi = v; }
+    const trim = Number.isFinite(clip) ? clamp(clip, 0, 0.2) : 0;
+    if (trim > 0) {
+      const sorted = Float64Array.from(lum).sort();
+      lo = sorted[Math.floor(trim * (sorted.length - 1))];
+      hi = sorted[Math.ceil((1 - trim) * (sorted.length - 1))];
+    } else {
+      lo = Infinity;
+      hi = -Infinity;
+      for (const v of lum) { if (v < lo) lo = v; if (v > hi) hi = v; }
+    }
   }
   const span = hi - lo;
   const flat = stretch && span < 1e-9; // one solid colour: there is nothing to stretch, so use its real brightness
@@ -79,5 +125,5 @@ export function asciiFromImage(img, o = {}) {
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   ctx.drawImage(img, 0, 0, w, h);
   const { data } = ctx.getImageData(0, 0, w, h);
-  return imageToAscii({ data, width: w, height: h }, o);
+  return imageToAscii({ data, width: w, height: h }, { detail: 0.9, clip: 0.02, ...o });
 }

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { imageToAscii, IMG_RAMP } from '../src/fx/imgascii.js';
+import { imageToAscii, IMG_RAMP, asciiColumns } from '../src/fx/imgascii.js';
 
 /** Build an RGBA image from a function (x, y) -> [r, g, b, a]. */
 function make(width, height, fn) {
@@ -107,4 +107,49 @@ test('fast enough for a full-size image (the browser downsamples first, this is 
   const start = performance.now();
   imageToAscii(big, { cols: 72 });
   assert.ok(performance.now() - start < 1500, `${(performance.now() - start).toFixed(0)}ms`);
+});
+
+test('asciiColumns: about one character per 7 px, clamped, and safe with odd input', () => {
+  assert.equal(asciiColumns(705), 101);
+  assert.equal(asciiColumns(330), 47);
+  assert.equal(asciiColumns(140), 40, 'a tiny picture is not mush');
+  assert.equal(asciiColumns(5000), 110, 'a huge one is not a wall of text');
+  assert.equal(asciiColumns(700, { cell: 10 }), 70);
+  for (const bad of [0, -5, NaN, undefined, null, 'x', Infinity]) assert.ok(Number.isInteger(asciiColumns(bad)) && asciiColumns(bad) >= 40 && asciiColumns(bad) <= 110, String(bad));
+  let prev = 0;
+  for (let w = 100; w <= 1200; w += 25) { const c = asciiColumns(w); assert.ok(c >= prev, `monotonic at ${w}`); prev = c; }
+});
+
+test('detail sharpens: a faint shape on a strong gradient becomes visible (a plain conversion lets the gradient hide it)', () => {
+  // Brightness rises steadily left to right; a small square is only slightly brighter than its surroundings.
+  const img = make(200, 100, (x, y) => grey(Math.round(20 + (x / 199) * 180 + (x > 80 && x < 120 && y > 30 && y < 70 ? 14 : 0))));
+  const rows = (o) => lines(imageToAscii(img, { cols: 50, ...o })).map((l) => l.padEnd(50, ' '));
+  const differing = (r) => {
+    const mid = Math.floor(r.length / 2);
+    let n = 0;
+    for (let col = 21; col <= 29; col++) if (levelOf(r[mid][col]) !== levelOf(r[0][col])) n++; // inside the square vs the same column above it
+    return n;
+  };
+  const plain = differing(rows({ detail: 0 }));
+  const sharp = differing(rows({ detail: 1.2 }));
+  assert.ok(sharp > plain, `the square shows in ${sharp} columns with detail, ${plain} without`);
+  assert.equal(imageToAscii(img, { cols: 50 }), imageToAscii(img, { cols: 50, detail: 0 }), 'off by default');
+});
+
+test('detail leaves flat images, solid colours and the shape of the output alone', () => {
+  const flat = make(40, 40, () => grey(128));
+  assert.equal(imageToAscii(flat, { cols: 20, detail: 2 }), imageToAscii(flat, { cols: 20 }));
+  const a = lines(imageToAscii(make(97, 61, (x, y) => grey((x * 7 + y * 13) % 256), { cols: 30 }), { cols: 30, detail: 1.5, clip: 0.05 }));
+  assert.equal(a.length, lines(imageToAscii(make(97, 61, (x, y) => grey((x * 7 + y * 13) % 256)), { cols: 30 })).length);
+  for (const bad of [NaN, -3, 99, undefined]) assert.ok(!/NaN|undefined/.test(imageToAscii(make(30, 20, (x) => grey(x * 8)), { cols: 15, detail: bad, clip: bad })), String(bad));
+});
+
+test('clip ignores a few glare cells so they do not wash out the rest', () => {
+  // A mostly dark gradient with one blazing white cell.
+  const img = make(100, 50, (x, y) => (x === 99 && y === 0 ? grey(255) : grey(Math.round((x / 99) * 80))));
+  const plain = lines(imageToAscii(img, { cols: 50 }));
+  const clipped = lines(imageToAscii(img, { cols: 50, clip: 0.02 }));
+  const used = (rows) => new Set(rows.join('')).size;
+  assert.ok(used(clipped) >= used(plain), `${used(clipped)} vs ${used(plain)} characters in use`);
+  assert.ok(levelOf(clipped[clipped.length - 1][Math.min(40, clipped[clipped.length - 1].length - 1)]) > levelOf(plain[plain.length - 1][Math.min(40, plain[plain.length - 1].length - 1)]), 'the picture itself uses more of the range');
 });
