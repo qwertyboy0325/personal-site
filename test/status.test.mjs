@@ -59,7 +59,7 @@ test('claim "0 trackers": no network calls from the page, and the CSP forbids an
   assert.match(csp, /default-src 'none'/);
   assert.ok(!/connect-src/.test(csp), 'no connect-src: the page cannot talk to any server');
   assert.ok(!/https?:\/\//.test(csp), 'no external host is allowed anywhere in the policy');
-  const loaded = [...html.matchAll(/\b(?:src|href)="(https?:\/\/[^"]+)"/g)].map((m) => m[1]);
+  const loaded = [...html.replace(/<link rel="canonical"[^>]*>/, '').matchAll(/\b(?:src|href)="(https?:\/\/[^"]+)"/g)].map((m) => m[1]); // the canonical link names the page itself, it loads nothing
   for (const url of loaded) assert.ok(/github\.com\/qwertyboy0325/.test(url), `external reference ${url} is only a link, not a resource`);
-  assert.ok(!/<(?:img|script|link|iframe|video|audio|source)\b[^>]+(?:src|href)="https?:/.test(html), 'no external resource is loaded');
+  assert.ok(!/<(?:img|script|link|iframe|video|audio|source)\b[^>]+(?:src|href)="https?:/.test(html.replace(/<link rel="canonical"[^>]*>/, '')), 'no external resource is loaded');
 });

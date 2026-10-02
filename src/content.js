@@ -10,6 +10,9 @@ export const profile = {
   email: 'ezra40907@gmail.com', // public contact address (buttons and the `contact` line appear when this is a string; null hides them)
 };
 
+/** The public address of the site. Used for the canonical link, share previews and the sitemap (a test keeps them in step). */
+export const SITE_URL = 'https://qwertyboy0325.github.io/personal-site/';
+
 /** Shown in the status line. Keep in step with package.json (a test checks). */
 export const VERSION = '1.0.0';
 
@@ -650,6 +653,7 @@ export const ui = {
     role: 'Backend / Platform Engineer',
     documentTitle: 'Ezra Wu — Backend / Platform Engineer',
     status: { claims: '0 cookies · 0 trackers · 0 dependencies', label: 'Site details' },
+    ogLine: 'I make the behind-the-scenes parts of software reliable: no lost messages, no repeated actions, no overwritten data.',
     inputLabel: 'Command input',
     chipsLabel: 'Quick commands',
     skip: 'Skip to the command line',
@@ -793,6 +797,7 @@ export const ui = {
     role: '後端／平台工程師',
     documentTitle: 'Ezra Wu — 後端／平台工程師',
     status: { claims: '0 個 cookie · 0 個追蹤器 · 0 個依賴套件', label: '網站資訊' },
+    ogLine: '我讓軟體幕後的部分更可靠：不漏訊息、不重複執行、不覆蓋資料。',
     inputLabel: '指令輸入',
     chipsLabel: '快速指令',
     skip: '跳到指令列',

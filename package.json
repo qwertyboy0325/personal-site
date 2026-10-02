@@ -2,6 +2,7 @@
   "name": "personal-site",
   "version": "1.0.0",
   "private": true,
+  "license": "MIT",
   "description": "Console-style, single-page interactive personal site. No framework, no build step for the app itself.",
   "type": "module",
   "engines": { "node": ">=20" },

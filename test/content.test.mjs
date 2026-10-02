@@ -91,7 +91,7 @@ test('index.html: security and SEO essentials', async () => {
   assert.ok(!/<script(?![^>]*(src=|type="application\/ld\+json"))/.test(html), 'no inline scripts');
   assert.ok(!/\sstyle=/.test(html), 'no inline styles');
   // Nothing may load from a third-party origin.
-  const external = [...html.matchAll(/(?:src|href)="(https?:\/\/[^"]+)"/g)].map((m) => m[1]).filter((u) => !u.startsWith(profile.github));
+  const external = [...html.replace(/<link rel="canonical"[^>]*>/, '').matchAll(/(?:src|href)="(https?:\/\/[^"]+)"/g)].map((m) => m[1]).filter((u) => !u.startsWith(profile.github));
   assert.deepEqual(external, []);
 });
 
