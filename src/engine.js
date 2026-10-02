@@ -2,21 +2,21 @@
 // context ({ lang, theme, history, now }) and return plain data, so the whole
 // terminal can be tested under Node.
 
-import { profile, projects, works, skillGroups, THEMES, LANGS, LANG_NAMES, ui, banner } from './content.js';
+import { profile, projects, works, gallery, skillGroups, THEMES, LANGS, LANG_NAMES, ui, banner } from './content.js';
 import { FX_MODES } from './fx/fx.js';
 import { TRANSITION_MODES } from './fx/transition.js';
 import { CURSOR_MODES } from './fx/reticle.js';
 import { SHAPES, REST_POSE, renderFrame } from './fx/ascii3d.js';
 import { renderFace } from './fx/face.js';
 
-export const PUBLIC_COMMANDS = ['about', 'projects', 'works', 'skills', 'contact', 'ls', 'cat', 'open', 'theme', 'lang', 'ascii', '3d', 'fx', 'transition', 'cursor', 'hud', 'clear', 'history', 'help'];
+export const PUBLIC_COMMANDS = ['about', 'projects', 'works', 'gallery', 'view', 'skills', 'contact', 'ls', 'cat', 'open', 'theme', 'lang', 'ascii', '3d', 'fx', 'transition', 'cursor', 'hud', 'clear', 'history', 'help'];
 const HIDDEN_COMMANDS = ['project', 'work', 'whoami', 'date', 'echo', 'neofetch', 'sudo', 'exit'];
-const ALIASES = { face: 'ascii', gui: 'hud', repos: 'projects', '?': 'help', man: 'help', cls: 'clear', dir: 'ls', ll: 'ls' };
+const ALIASES = { face: 'ascii', gui: 'hud', images: 'gallery', pictures: 'gallery', repos: 'projects', '?': 'help', man: 'help', cls: 'clear', dir: 'ls', ll: 'ls' };
 /** Commands whose output is addressable through the URL hash. */
 export const HUD_MODES = ['on', 'off'];
 /** Typing a shape's name on its own (`cube`) is a shortcut for `3d cube`. */
 const SHAPE_ALIASES = { donut: 'donut', torus: 'donut', cube: 'cube', sphere: 'sphere' };
-export const NAV = new Set(['about', 'projects', 'works', 'skills', 'contact', 'help']);
+export const NAV = new Set(['about', 'projects', 'works', 'gallery', 'skills', 'contact', 'help']);
 export const ALL_COMMANDS = [...PUBLIC_COMMANDS, ...HIDDEN_COMMANDS];
 
 const FILES = ['about.md', 'skills.md', 'contact.md'];
@@ -115,6 +115,36 @@ const findWork = (q) => {
   return works.find((w) => w.slug === String(q).toLowerCase()) ?? null;
 };
 
+const findView = (q) => {
+  const n = Number(q);
+  if (Number.isInteger(n) && n >= 1 && n <= gallery.length) return [gallery[n - 1], n - 1];
+  const i = gallery.findIndex((g) => g.slug === String(q).toLowerCase());
+  return i >= 0 ? [gallery[i], i] : null;
+};
+
+const firstSentence = (text) => text.match(/^.*?[.。]/)?.[0] ?? text;
+
+function galleryBlocks(ctx) {
+  const t = T(ctx);
+  return [
+    h(t.galleryTitle),
+    ul(gallery.map((g, i) => [{ cmd: `view ${i + 1}`, text: `${i + 1}. ${g[ctx.lang].title}${g.kind === 'video' ? ` ▶ ${t.viewer.play}` : ''}` }, { sub: firstSentence(g[ctx.lang].caption) }])),
+    p(...t.galleryHint),
+  ];
+}
+
+/** One picture or video as a block; main.js animates it and the lightbox opens it. */
+function viewBlocks(g, index, ctx) {
+  const t = T(ctx);
+  const c = g[ctx.lang];
+  const out = [
+    { t: 'image', index: index + 1, slug: g.slug, kind: g.kind, src: g.src, poster: g.poster ?? null, width: g.width, height: g.height, alt: c.alt, title: c.title, caption: c.caption, source: g.source ?? null, open: t.viewer.open },
+  ];
+  const wi = works.findIndex((w) => w.slug === g.work);
+  if (wi >= 0) out.push(p({ dim: `${t.viewer.related}: ` }, { cmd: `work ${wi + 1}`, text: works[wi][ctx.lang].title }));
+  return out;
+}
+
 function worksBlocks(ctx) {
   const t = T(ctx);
   const out = [h(t.worksTitle)];
@@ -135,7 +165,7 @@ function workBlocks(w, ctx) {
   const c = w[ctx.lang];
   const rows = [[t.workLabels.kind, t.workKinds[w.kind]]];
   if (w.url) rows.push([t.workLabels.repo, { link: w.url, text: w.url.replace('https://', '') }]);
-  return [
+  const out = [
     h(c.title),
     p(c.summary),
     kv(rows),
@@ -143,6 +173,9 @@ function workBlocks(w, ctx) {
     p({ dim: `${t.projectLabels.notes}: ${c.nongoals}` }),
     p({ dim: `${t.projectLabels.tech}: ${c.tech}` }),
   ];
+  const pics = gallery.map((g, i) => [g, i]).filter(([g]) => g.work === w.slug);
+  if (pics.length) out.push(p({ dim: `${t.viewer.pictures}: ` }, ...pics.flatMap(([g, i], n) => [...(n ? [' · '] : []), { cmd: `view ${i + 1}`, text: g[ctx.lang].title }])));
+  return out;
 }
 
 function skillsBlocks(ctx) {
@@ -153,7 +186,7 @@ function skillsBlocks(ctx) {
 function contactBlocks(ctx) {
   const t = T(ctx);
   const rows = [[t.contactLabels.github, { link: profile.github, text: profile.github.replace('https://', '') }]];
-  if (profile.email) rows.push([t.contactLabels.email, profile.email]);
+  if (profile.email) rows.push([t.contactLabels.email, [{ mail: profile.email }, '  ', { copy: profile.email, text: t.contactCopy }]]);
   rows.push([t.contactLabels.mode, t.contactMode]);
   return [h(t.contactTitle), kv(rows)];
 }
@@ -197,6 +230,15 @@ const commands = {
   projects: (_a, ctx) => ({ blocks: projectsBlocks(ctx) }),
 
   works: (_a, ctx) => ({ blocks: worksBlocks(ctx) }),
+
+  gallery: (_a, ctx) => ({ blocks: galleryBlocks(ctx) }),
+
+  view(args, ctx) {
+    const t = T(ctx);
+    if (!args.length) return { blocks: galleryBlocks(ctx) };
+    const hit = findView(args.join(' '));
+    return { blocks: hit ? viewBlocks(hit[0], hit[1], ctx) : [err(t.noView(args.join(' ')))] };
+  },
 
   work(args, ctx) {
     const t = T(ctx);
@@ -401,6 +443,7 @@ function argCandidates(cmd) {
     case 'open': return ['github', ...projectNames];
     case 'project': return projectNames;
     case 'work': return works.map((w) => w.slug);
+    case 'view': return gallery.map((g) => g.slug);
     default: return [];
   }
 }

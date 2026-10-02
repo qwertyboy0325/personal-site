@@ -9,6 +9,14 @@
 (() => {
   'use strict';
 
+  // Reserve the split-screen layout before first paint. main.js turns the overview on a moment later;
+  // without this the terminal starts centred and then jumps right (a large layout shift).
+  try {
+    let hud = 'on';
+    try { if (localStorage.getItem('hud') === 'off') hud = 'off'; } catch { /* storage blocked: default */ }
+    document.documentElement.dataset.hud = hud;
+  } catch { /* nothing to reserve */ }
+
   const WAIT_MS = 3000;
   const MAX = 8;
   const problems = [];

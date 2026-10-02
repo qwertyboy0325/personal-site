@@ -9,6 +9,7 @@ const ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&
 export const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ESCAPES[c]);
 
 const isSafeHref = (h) => /^https:\/\/[^\s"'<>]+$/.test(h);
+export const isEmail = (s) => /^[^\s@<>"'`\\]+@[^\s@<>"'`\\]+\.[^\s@<>"'`\\]+$/.test(String(s));
 const DEFAULTS = { ps1: 'ezra@site:~$', interactive: true };
 
 /** Render one inline segment (string or {link|cmd|dim|em|ok}). */
@@ -23,6 +24,15 @@ export function seg(s, o = DEFAULTS) {
     const text = esc(s.text ?? s.cmd);
     if (o.interactive === false) return `<code class="cmd">${text}</code>`;
     return `<button type="button" class="cmd" data-cmd="${esc(s.cmd)}">${text}</button>`;
+  }
+  if (s.mail !== undefined) {
+    // A mailto: link, only for a well-formed address.
+    return isEmail(s.mail) ? `<a class="lnk" href="mailto:${esc(s.mail)}">${esc(s.mail)}</a>` : esc(s.mail);
+  }
+  if (s.copy !== undefined) {
+    const text = esc(s.text ?? 'copy');
+    if (o.interactive === false || !isEmail(s.copy)) return `<code class="cmd">${text}</code>`;
+    return `<button type="button" class="cmd" data-copy="${esc(s.copy)}">${text}</button>`;
   }
   if (s.dim !== undefined) return `<span class="dim">${esc(s.dim)}</span>`;
   if (s.sub !== undefined) return `<span class="dim sub">${esc(s.sub)}</span>`; // a dim line under the text before it
@@ -55,6 +65,17 @@ export function block(b, o = DEFAULTS) {
       return `<pre class="art" aria-hidden="true">${esc(b.v)}</pre>`;
     case 'asciiface':
       return `<pre class="art ascii-face" role="img" aria-label="${esc(b.label ?? 'ASCII face')}" data-ascii-face>${esc(b.v)}</pre>`;
+    case 'image': {
+      // A picture or video poster. main.js draws it as ASCII first, then dissolves into this image.
+      const video = b.kind === 'video';
+      return `<figure class="shot" data-image data-kind="${esc(b.kind)}" data-open="${esc(b.index)}">`
+        + `<button type="button" class="shot-open" data-open="${esc(b.index)}" aria-label="${esc(b.open ?? 'Open larger')}: ${esc(b.title)}">`
+        + '<pre class="shot-ascii" aria-hidden="true" hidden></pre>'
+        + `<img class="shot-img" src="${esc(b.poster ?? b.src)}" width="${esc(b.width)}" height="${esc(b.height)}" alt="${esc(b.alt)}" decoding="async">`
+        + (video ? '<span class="shot-play" aria-hidden="true">▶</span>' : '')
+        + '</button>'
+        + `<figcaption><strong>${esc(b.title)}</strong> <span class="dim">${esc(b.caption)}</span></figcaption></figure>`;
+    }
     case 'ascii3d':
       return `<pre class="art ascii3d" role="img" aria-label="${esc(b.label ?? 'ASCII 3D model')}" data-ascii3d data-shape="${esc(b.shape ?? 'donut')}">${esc(b.v)}</pre>`;
     case 'row':

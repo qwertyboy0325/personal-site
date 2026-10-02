@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { guiHtml, activeKey } from '../src/gui.js';
-import { projects, works, skillGroups, profile, ui, LANGS } from '../src/content.js';
+import { projects, works, gallery, skillGroups, profile, ui, LANGS } from '../src/content.js';
 
 const count = (s, re) => (s.match(re) ?? []).length;
 const ENTITIES = { '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'" };
@@ -48,10 +48,10 @@ test('guiHtml: tools become chips, other skills become a list, stack chips come 
 
 test('guiHtml: accessible structure (labelled sections, real buttons, safe external link)', () => {
   const html = guiHtml('en');
-  for (const id of ['g-projects', 'g-works', 'g-skills', 'g-contact']) {
+  for (const id of ['g-projects', 'g-works', 'g-gallery', 'g-skills', 'g-contact']) {
     assert.ok(html.includes(`aria-labelledby="${id}"`) && html.includes(`id="${id}"`), id);
   }
-  assert.equal(count(html, /<button type="button" class="gcard gbtn/g), projects.length + works.length + 1);
+  assert.equal(count(html, /<button type="button" class="gcard gbtn/g), projects.length + works.length + gallery.length + 1);
   assert.match(html, /<a class="gbtn glink" href="https:\/\/github\.com\/qwertyboy0325" target="_blank" rel="noopener noreferrer">/);
   assert.match(html, /<pre class="gbanner" aria-hidden="true">/);
   assert.ok(!/\son\w+=|\sstyle=|<script/i.test(html), 'no inline handlers, styles or scripts (CSP)');
@@ -100,4 +100,25 @@ test('styles: cards are keyboard-visible, touch-sized and show the active state'
   assert.match(css, /\.gcard\.active \{/);
   assert.match(css, /\.glink \{[^}]*min-height: 44px/);
   assert.match(css, /\.k-visual \{[^}]*\} \.k-think/);
+});
+
+test('guiHtml: a thumbnail card per picture, with real dimensions, lazy loading and an empty alt (the title is beside it)', () => {
+  for (const lang of LANGS) {
+    const html = guiHtml(lang);
+    assert.equal(count(html, /data-cmd="view \d+"/g), gallery.length);
+    gallery.forEach((g, i) => {
+      assert.ok(html.includes(`data-cmd="view ${i + 1}"`));
+      assert.ok(html.includes(`src="${g.thumb}" width="${g.thumbWidth}" height="${g.thumbHeight}" alt="" loading="lazy"`), g.slug);
+      assert.ok(plain(html).includes(g[lang].title));
+    });
+    assert.equal(count(html, /class="shot-play"/g), gallery.filter((g) => g.kind === 'video').length, 'a play badge on videos only');
+  }
+});
+
+test('activeKey: `view` resolves by number and by name', () => {
+  assert.equal(activeKey('view 2'), 'view 2');
+  assert.equal(activeKey('VIEW  black-hole-evolution'), `view ${gallery.findIndex((g) => g.slug === 'black-hole-evolution') + 1}`);
+  assert.equal(activeKey(`view ${gallery.length + 1}`), null);
+  assert.equal(activeKey('view'), null);
+  assert.equal(activeKey('gallery'), null);
 });

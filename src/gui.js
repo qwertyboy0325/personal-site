@@ -7,8 +7,8 @@
 // Everything dynamic goes through esc(); cards are real <button>s so they are
 // keyboard reachable.
 
-import { esc } from './render.js';
-import { profile, projects, works, skillGroups, banner, ui } from './content.js';
+import { esc, isEmail } from './render.js';
+import { profile, projects, works, gallery, skillGroups, banner, ui } from './content.js';
 
 const KIND_CLASS = { visual: 'k-visual', thinking: 'k-think', design: 'k-design' };
 
@@ -33,6 +33,16 @@ export function guiHtml(lang) {
     )
     .join('');
 
+  const galleryCards = gallery
+    .map((it, i) =>
+      card(
+        `view ${i + 1}`,
+        `<span class="gthumb-wrap"><img src="${esc(it.thumb)}" width="${esc(it.thumbWidth)}" height="${esc(it.thumbHeight)}" alt="" loading="lazy" decoding="async">${it.kind === 'video' ? '<span class="shot-play" aria-hidden="true">▶</span>' : ''}</span><span class="gtitle">${esc(it[lang].title)}</span>`,
+        ' gthumb',
+      ),
+    )
+    .join('');
+
   const skills = skillGroups
     .map((group) => {
       const [name, items] = group[lang];
@@ -44,7 +54,7 @@ export function guiHtml(lang) {
     .join('');
 
   const contact = [`<a class="gbtn glink" href="${esc(profile.github)}" target="_blank" rel="noopener noreferrer">${esc(g.github)} ↗</a>`];
-  if (profile.email) contact.push(`<span class="gmail">${esc(profile.email)}</span>`);
+  if (profile.email && isEmail(profile.email)) contact.push(`<button type="button" class="gbtn gmail" data-copy="${esc(profile.email)}">✉ ${esc(t.contactButton)}</button>`);
 
   return `
     <header class="gcard gprofile">
@@ -52,11 +62,12 @@ export function guiHtml(lang) {
       <h2 class="gname">${esc(profile.name)}</h2>
       <p class="grole">${esc(t.role)}</p>
       <p>${esc(t.welcome)}</p>
-      ${card('about', `<span class="gtitle">${esc(g.aboutButton)} →</span>`, ' gabout')}
+      <div class="gactions">${card('about', `<span class="gtitle">${esc(g.aboutButton)} →</span>`, ' gabout')}${profile.email && isEmail(profile.email) ? `<button type="button" class="gbtn gmail gmail-top" data-copy="${esc(profile.email)}">✉ ${esc(t.contactButton)}</button>` : ''}</div>
       <p class="ghint"><span class="led" aria-hidden="true"></span>${esc(g.hint)}</p>
     </header>
     <section class="gsec" aria-labelledby="g-projects"><h3 id="g-projects">// ${esc(g.sections.projects)}</h3><div class="ggrid">${projectCards}</div></section>
     <section class="gsec" aria-labelledby="g-works"><h3 id="g-works">// ${esc(g.sections.works)}</h3><div class="ggrid">${workCards}</div></section>
+    <section class="gsec" aria-labelledby="g-gallery"><h3 id="g-gallery">// ${esc(g.sections.gallery)}</h3><div class="ggrid ggallery">${galleryCards}</div></section>
     <section class="gsec" aria-labelledby="g-skills"><h3 id="g-skills">// ${esc(g.sections.skills)}</h3><div class="gskills">${skills}</div></section>
     <section class="gsec" aria-labelledby="g-contact"><h3 id="g-contact">// ${esc(g.sections.contact)}</h3><div class="gcontact">${contact.join('')}</div></section>`;
 }
@@ -66,10 +77,10 @@ export function guiHtml(lang) {
  * and `work black-hole` all resolve; anything else returns null.
  */
 export function activeKey(line) {
-  const m = String(line ?? '').trim().toLowerCase().match(/^(project|work)\s+(.+)$/);
+  const m = String(line ?? '').trim().toLowerCase().match(/^(project|work|view)\s+(.+)$/);
   if (!m) return String(line ?? '').trim().toLowerCase() === 'about' ? 'about' : null;
   const [, kind, arg] = m;
-  const list = kind === 'project' ? projects : works;
+  const list = kind === 'project' ? projects : kind === 'work' ? works : gallery;
   const n = Number(arg);
   if (Number.isInteger(n) && n >= 1 && n <= list.length) return `${kind} ${n}`;
   const i = list.findIndex((x) => x.slug === arg.trim());

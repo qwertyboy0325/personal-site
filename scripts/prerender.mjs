@@ -17,7 +17,7 @@ const ctx = { lang: 'en', theme: 'dark', history: [] };
 export function buildStatic() {
   const opts = { interactive: false };
   const entries = [renderEntry(welcomeBlocks(ctx), opts)];
-  for (const cmd of ['about', 'projects', 'works', 'skills', 'contact']) {
+  for (const cmd of ['about', 'projects', 'works', 'gallery', 'skills', 'contact']) {
     entries.push(renderEntry([{ t: 'echo', v: cmd }, ...execute(cmd, ctx).blocks], opts));
   }
   return entries.join('\n');

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execute, complete, parse, PUBLIC_COMMANDS, NAV, bootLines, welcomeBlocks } from '../src/engine.js';
 import { renderBlocks } from '../src/render.js';
-import { projects, works, THEMES } from '../src/content.js';
+import { projects, works, gallery, THEMES } from '../src/content.js';
 
 const ctx = (over = {}) => ({ lang: 'en', theme: 'dark', history: [], now: () => new Date('2026-10-01T03:00:00Z'), ...over });
 const html = (line, c = ctx()) => renderBlocks(execute(line, c).blocks);
@@ -197,4 +197,46 @@ test('every work can be opened by number and by name, in both languages', () => 
       assert.ok(text(`work ${works[i - 1].slug}`, ctx({ lang })).includes(works[i - 1][lang].title));
     }
   }
+});
+
+test('gallery: list, view by number and name, errors, aliases, both languages', () => {
+  assert.match(text('gallery'), /gallery/);
+  for (let i = 1; i <= gallery.length; i++) assert.match(html('gallery'), new RegExp(`data-cmd="view ${i}"`));
+  assert.match(html('gallery'), /▶ video/, 'the video is marked');
+  assert.equal(text('images'), text('gallery'));
+  assert.equal(text('pictures'), text('gallery'));
+  assert.equal(text('view'), text('gallery'), '`view` alone lists the gallery');
+  const one = execute('view 1', ctx()).blocks.find((b) => b.t === 'image');
+  assert.ok(one && one.slug === gallery[0].slug && one.kind === 'image');
+  assert.equal(one.width, gallery[0].width);
+  assert.equal(one.alt, gallery[0].en.alt);
+  assert.equal(execute(`view ${gallery[1].slug}`, ctx()).blocks.find((b) => b.t === 'image').slug, gallery[1].slug);
+  const video = execute(`view ${gallery.length}`, ctx()).blocks.find((b) => b.t === 'image');
+  assert.equal(video.kind, 'video');
+  assert.ok(video.poster.endsWith('.jpg'));
+  assert.match(text('view 99'), /no match/);
+  assert.match(text('view nonsense'), /no match/);
+  const zh = execute('view 1', ctx({ lang: 'zh' })).blocks.find((b) => b.t === 'image');
+  assert.equal(zh.title, gallery[0].zh.title);
+  assert.match(text('view 1'), /about this: Black hole renderer/, 'links back to the related work');
+  assert.equal(execute('gallery', ctx()).nav, 'gallery');
+  assert.equal(execute('view 1', ctx()).nav, undefined);
+  assert.deepEqual(complete('view black'), { line: 'view black-hole-', options: [] }, 'common prefix of the slugs');
+});
+
+test('works that have pictures link to them; works without pictures do not', () => {
+  assert.match(html('work 1'), /data-cmd="view 1"/);
+  assert.match(text('work 1'), /pictures: .*A black hole, prepared for viewing/);
+  assert.ok(!/pictures:/.test(text('work 3')), 'the AI work has no pictures yet');
+  assert.match(text('work 1', ctx({ lang: 'zh' })), /相關圖片/);
+});
+
+test('image block: width and height are rendered, text is escaped, video gets a play badge', () => {
+  const b = { t: 'image', index: 2, slug: 'x', kind: 'video', src: 'a.mp4', poster: 'p.jpg', width: 640, height: 480, alt: '"><img src=x onerror=alert(1)>', title: '<b>t</b>', caption: '<script>1</script>', open: 'Open' };
+  const out = renderBlocks([b]);
+  assert.match(out, /<img class="shot-img" src="p\.jpg" width="640" height="480"/);
+  assert.ok(!out.includes('<script') && !out.includes('<b>') && !/<img src=x/.test(out), out);
+  assert.match(out, /class="shot-play"/);
+  assert.doesNotMatch(renderBlocks([{ ...b, kind: 'image', poster: null }]), /shot-play/);
+  assert.match(out, /aria-label="Open: &lt;b&gt;t&lt;\/b&gt;"/);
 });

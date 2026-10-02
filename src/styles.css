@@ -17,6 +17,10 @@
   --glow: rgba(94, 234, 212, 0.07);
   --fs: 15px;
   --lh: 1.65;
+  /* Type scale: mono for the terminal and details, a clean system sans only for the big name and headings. No web fonts (strict CSP, nothing to download). */
+  --display: ui-sans-serif, system-ui, -apple-system, "SF Pro Display", "Segoe UI", "Helvetica Neue", "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+  --t-display: clamp(2.5rem, 1.3rem + 4.2vw, 4.25rem); /* 40px on a phone, up to 68px on a wide screen */
+  --t-lead: 1.0625rem;
   --font: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", "Noto Sans Mono CJK TC", "PingFang TC", "Microsoft JhengHei", monospace;
 }
 
@@ -431,8 +435,9 @@ html.rt-on input { cursor: text; }
 /* wide: two columns, side by side */
 @media (min-width: 1000px) {
   html[data-hud="on"] .stage { grid-template-columns: minmax(360px, 1fr) minmax(520px, 1.2fr); gap: 18px; justify-items: stretch; width: min(1500px, 100%); margin-inline: auto; }
-  html[data-hud="on"] .window { width: auto; justify-self: stretch; }
-  html[data-hud="on"] .gui { display: flex; }
+  /* The terminal always sits in column 2, so it does not jump across when main.js reveals the overview in column 1. */
+  html[data-hud="on"] .window { width: auto; justify-self: stretch; grid-column: 2; }
+  html[data-hud="on"] .gui { display: flex; grid-column: 1; }
 }
 /* narrow: one pane at a time, switched by the tabs */
 @media (max-width: 999.98px) {
@@ -492,9 +497,9 @@ html.rt-on input { cursor: text; }
 .k-visual { color: var(--accent); } .k-think { color: var(--accent2); } .k-design { color: var(--link); }
 .gprofile { display: flex; flex-direction: column; gap: 6px; }
 .gprofile p { margin: 0; }
-.gbanner { margin: 0; color: var(--accent); font-size: 11px; line-height: 1.1; overflow: hidden; }
-.gname { margin: 4px 0 0; font-size: 20px; letter-spacing: 0.02em; }
-.grole { color: var(--accent2); }
+.gbanner { margin: 0; color: var(--accent); font-size: 8px; line-height: 1.1; overflow: hidden; opacity: 0.7; } /* the pixel banner is now a quiet label above the real name */
+.gname { margin: 2px 0 0; font: 700 var(--t-display)/0.98 var(--display); letter-spacing: -0.035em; color: var(--fg); overflow-wrap: anywhere; text-wrap: balance; }
+.gprofile .grole { margin-top: 4px; color: var(--accent2); font-size: var(--t-lead); letter-spacing: 0.01em; }
 .gabout { width: auto; flex-direction: row; align-self: flex-start; margin-top: 4px; padding: 8px 14px; min-height: 40px; align-items: center; }
 .ghint { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--dim); }
 .led { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: led 2s steps(2) infinite; }
@@ -511,3 +516,68 @@ html.rt-on input { cursor: text; }
 #hud-left { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 #hud-left .panel:nth-child(2) { grid-column: 1 / -1; order: 3; }
 @media (max-width: 420px) { #hud-left { grid-template-columns: 1fr; } }
+
+/* ---- pictures: drawn as ASCII first, then the real image (src/main.js, src/fx/imgascii.js) ---- */
+.shot { margin: 8px 0; max-width: 460px; }
+.shot-open { position: relative; display: block; width: 100%; padding: 0; overflow: hidden; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; cursor: zoom-in; transition: border-color 0.15s; }
+.shot-open:hover, .shot-open:focus-visible { border-color: var(--accent); }
+.shot-img { display: block; width: 100%; height: auto; }
+.entry .shot-ascii { position: absolute; inset: 0; margin: 0; overflow: hidden; white-space: pre; font-family: inherit; color: var(--accent); background: var(--panel); }
+.shot.is-ascii .shot-img { visibility: hidden; }
+.shot-play { position: absolute; right: 10px; bottom: 10px; width: 36px; height: 36px; display: grid; place-items: center; font-size: 14px; color: var(--bg); background: var(--accent); border-radius: 50%; pointer-events: none; }
+.shot figcaption { margin-top: 6px; font-size: 12px; line-height: 1.5; }
+.gthumb { gap: 8px; }
+.gthumb-wrap { position: relative; display: block; width: 100%; overflow: hidden; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); }
+.gthumb-wrap img { display: block; width: 100%; height: auto; }
+.ggallery { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+
+/* ---- viewer window (src/lightbox.js) -------------------------------------------------------- */
+.viewer { width: min(92vw, 860px); max-height: 92vh; max-height: 92dvh; padding: 0; overflow: hidden; color: var(--fg); background: var(--panel); border: 1px solid var(--accent); border-radius: 10px; box-shadow: 0 30px 90px rgba(0, 0, 0, 0.7); }
+.viewer[open] { display: flex; flex-direction: column; }
+.viewer::backdrop { background: rgba(0, 0, 0, 0.78); }
+.vbar { display: flex; flex: none; align-items: center; gap: 12px; height: 52px; padding: 0 8px 0 14px; background: var(--bar); border-bottom: 1px solid var(--line); }
+.vtitle { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; color: var(--accent); }
+.vcount { font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums; }
+.vclose, .vprev, .vnext { min-width: 44px; min-height: 44px; font: inherit; color: var(--fg); background: transparent; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+.vclose:hover, .vprev:hover, .vnext:hover { color: var(--accent); border-color: var(--accent); }
+.vstage { display: grid; flex: 1; min-height: 0; place-items: center; overflow: auto; background: #000; }
+.vstage img, .vstage video { display: block; width: auto; height: auto; max-width: 100%; max-height: 62vh; max-height: 62dvh; }
+.vcap { flex: none; max-height: 22vh; max-height: 22dvh; margin: 0; padding: 10px 14px; overflow: auto; font-size: 13px; line-height: 1.55; color: var(--dim); }
+.vnav { display: flex; flex: none; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 14px 12px; }
+.vlinks a { color: var(--link); }
+@media print { .viewer { display: none; } }
+
+/* ---- contact (copy email) ---------------------------------------------------------------- */
+.tab-mail { flex: none; max-width: 56px; min-width: 56px; }
+.gactions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.gmail { width: auto; flex-direction: row; align-items: center; min-height: 44px; padding: 0 14px; color: var(--accent2); border: 1px solid var(--accent2); border-radius: 6px; background: color-mix(in srgb, var(--accent2) 10%, var(--panel)); } /* explicit background: the browser's own button grey failed contrast in the dark theme */
+.gmail:hover, .gmail:focus-visible { color: var(--bg); background: var(--accent2); }
+.toast { position: fixed; left: 50%; bottom: 24px; z-index: 90; max-width: min(92vw, 520px); padding: 10px 16px; font-size: 13px; color: var(--fg); background: var(--panel); border: 1px solid var(--accent); border-radius: 8px; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5); transform: translate(-50%, 12px); opacity: 0; pointer-events: none; transition: opacity 0.18s, transform 0.18s; }
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+@media print { .toast { display: none; } }
+
+/* ---- floating picture windows (src/windows.js) -------------------------------------------------- */
+#windows { position: fixed; inset: 0; z-index: 30; pointer-events: none; }
+.win { position: absolute; display: flex; flex-direction: column; width: min(520px, 44vw); max-height: 86vh; max-height: 86dvh; overflow: hidden; pointer-events: auto; color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55); outline: none; }
+.win.is-front { border-color: var(--accent); box-shadow: 0 24px 80px rgba(0, 0, 0, 0.7), 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent); }
+.win:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.win:not(.is-front) .wstage { filter: saturate(0.7) brightness(0.8); }
+.wbar { display: flex; flex: none; align-items: center; gap: 10px; height: 44px; padding: 0 6px 0 12px; cursor: grab; touch-action: none; user-select: none; background: var(--bar); border-bottom: 1px solid var(--line); }
+.win.is-dragging .wbar { cursor: grabbing; }
+.win.is-dragging { box-shadow: 0 30px 90px rgba(0, 0, 0, 0.8); }
+.wtitle { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; color: var(--accent); }
+.wmeta { flex: none; font-size: 11px; color: var(--dim); font-variant-numeric: tabular-nums; }
+.wclose, .wprev, .wnext { min-width: 44px; min-height: 44px; font: inherit; color: var(--fg); background: transparent; border: 1px solid transparent; border-radius: 6px; cursor: pointer; }
+.wprev, .wnext { border-color: var(--line); }
+.wclose:hover, .wprev:hover, .wnext:hover { color: var(--accent); border-color: var(--accent); }
+.wstage { display: grid; flex: 1; min-height: 0; place-items: center; overflow: auto; background: #000; }
+.wstage img, .wstage video { display: block; width: auto; height: auto; max-width: 100%; max-height: 52vh; max-height: 52dvh; }
+.wcap { flex: none; max-height: 20vh; max-height: 20dvh; margin: 0; padding: 10px 12px; overflow: auto; font-size: 12px; line-height: 1.55; color: var(--dim); }
+.wcap strong { color: var(--fg); }
+.wnav { display: flex; flex: none; align-items: center; gap: 10px; padding: 6px 8px 8px; }
+.wlinks { flex: 1; text-align: center; font-size: 12px; }
+.wlinks a { color: var(--link); }
+.wcount { font-size: 11px; color: var(--dim); font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-motion: no-preference) { .win { animation: win-in 0.16s ease-out both; } }
+@keyframes win-in { from { opacity: 0; transform: translateY(6px) scale(0.985); } to { opacity: 1; transform: none; } }
+@media print { #windows { display: none; } }

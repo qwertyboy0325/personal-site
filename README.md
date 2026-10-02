@@ -20,6 +20,7 @@ npm run build    # 重新產生 index.html 內的預渲染區塊
 - 改 `.js` / `.html` / `.svg` / `.json`：自動重新載入。
 - 改 `test/`、`scripts/`、`README.md`、`.git`、`.shots`：忽略。
 - 改 `src/content.js`、`engine.js`、`render.js`、`fx/face.js`、`fx/rain.js` 時，終端機會提醒你跑 `npm run build`，因為這些會影響 `index.html` 內預渲染的無 JS 內容（伺服器不會替你改寫檔案）。
+- 開發伺服器支援 HTTP Range（分段傳輸）：**Safari 沒有它就不會播放 `<video>`**。
 - 熱重載的腳本與放寬的 CSP（`connect-src 'self'`）只在伺服器回應時注入，磁碟上的 `index.html` 與部署的內容不受影響。`LIVERELOAD=0 npm run dev` 可關閉。
 - 存檔後頁面沒反應時，先看執行 `npm run dev` 的終端機有沒有印出 `reload` 或 `css` 的訊息；沒有的話代表該檔案屬於被忽略的類型。
 
@@ -29,6 +30,7 @@ npm run build    # 重新產生 index.html 內的預渲染區塊
 |---|---|
 | `help` | 指令清單 |
 | `about` `projects` `works` `skills` `contact` | 內容。`project <編號\|名稱>` 看單一專案，`work <編號\|名稱>` 看單一作品 |
+| `gallery` `view <編號\|名稱>` | 圖片與影片。`view 1` 會先把圖片用字元畫出來（由圖片自己的像素算出），再「溶解」成真正的圖片；點圖片開檢視器（←/→ 切換、Esc 關閉）：寬螢幕＋滑鼠時是**可拖曳的浮動視窗**（可同時開多個，點擊置前，標題列顯示檔名與尺寸，Alt+方向鍵可用鍵盤移動），窄螢幕與觸控則是全頁對話框。左側概覽也有縮圖卡片 |
 | `ls` `cat <檔案>` `open <目標>` | 虛擬檔案系統與開啟連結 |
 | `theme [dark\|light\|amber\|matrix]` | 色彩主題 |
 | `lang [en\|zh]` | 語言（預設依瀏覽器語言） |
@@ -52,6 +54,11 @@ src/content.js        所有文案（中英）、專案、技能 —— 要改�
 src/engine.js         指令引擎：純函式，沒有 DOM，可在 Node 測試
 src/render.js         區塊 -> HTML 字串，唯一的渲染器（瀏覽器與預渲染共用）
 src/main.js           DOM、鍵盤、主題、語言、開機、各效果的接線
+src/lightbox.js       圖片檢視器（窄螢幕／觸控）：原生 <dialog>（焦點陷阱、Esc、焦點回到來源），支援影片，關閉時停止播放
+src/windows.js        圖片檢視器（寬螢幕＋滑鼠）：可拖曳、可堆疊的浮動視窗（最多 6 個、拖曳限制在畫面內、非 modal，終端機照常可用）
+src/viewer-content.js 兩種檢視器共用：檔名／尺寸、<img>/<video> 的建立、停止影片
+src/fx/imgascii.js    圖片 -> ASCII（純函式：RGBA 像素 -> 字元，含自動對比與透明度處理）
+assets/gallery/       圖片與影片；`SOURCES.md` 記錄每個檔案的來源與轉檔方式
 src/gui.js            左側概覽：由 content.js 產生專案/作品/技能卡片，與終端機雙向連動（純函式 + 小控制器）
 src/hud.js            概覽底部的即時遙測與最近指令（只在面板實際顯示時才運作）
 src/hud-format.js     遙測用的純格式化函式
@@ -81,8 +88,9 @@ test/                 node:test 單元測試
 - 快捷指令按鈕高度 44px；右上角工具列按鈕高 36px、寬 44px。
 
 **安全與隱私**
-- 嚴格的 CSP（`default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'`）：沒有行內腳本、沒有行內樣式、沒有第三方來源。
+- 嚴格的 CSP（`default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; media-src 'self'`，部署版沒有 `connect-src`，頁面無法對外發出任何請求）：沒有行內腳本、沒有行內樣式、沒有第三方來源。
 - 使用者輸入（例如 `echo`）一律跳脫；只有 `https://` 連結會被渲染成 `<a>`，且帶 `rel="noopener noreferrer"`。
+- 排版：終端機與細節用等寬字；只有大名字與標題用系統無襯線字（`--display`），名字用 `clamp()` 流體縮放（手機 40px → 寬螢幕 68px），320px 也不會溢出；e2e 逐寬度驗證。
 - 不使用外部字型、不做任何分析或追蹤。`localStorage` 的讀寫都包了 try/catch。
 
 **效能**
@@ -98,6 +106,8 @@ test/                 node:test 單元測試
 
 **作品（`works`）**：除了 4 個程式專案，另有 6 項作品（視覺與 3D、研究與思考、設計）。每一項都已對照原始資料查證，只用可公開的部分並去識別化（不含私人專案名稱、合作對象、客戶、金額）；每一項都有「不主張」欄位說明沒有宣稱什麼。只有確實有公開頁面的才附連結。新增作品請照 `works` 的欄位格式寫，`test/content.test.mjs` 會擋下私人字眼與術語。
 
+**圖片**：只放你自己的作品或公開專案的輸出，放在 `assets/gallery/`，並在 `SOURCES.md` 記下來源。新增圖片時在 `src/content.js` 的 `gallery` 填寫實際的 `width`／`height`（測試會核對，避免載入時版面跳動）、雙語標題與說明、以及描述圖片內容的 `alt`；說明文字要老實寫出「這張圖不是什麼」。縮圖與轉檔可用 macOS 內建的 `sips`（例如 `sips -s format jpeg -s formatOptions 82 -Z 1024 in.png --out out.jpg`）。每個檔案 < 200 KB（影片 < 600 KB）、總量 < 1.2 MB 由測試把關。影片要把索引放在檔案最前面（`ffmpeg -i in.mp4 -c copy -movflags +faststart out.mp4`，不重新編碼），否則瀏覽器得先抓檔案尾端才能開始播，測試也會擋下。
+
 **白話優先**：網站的讀者包含不寫程式的人。標題、摘要、重點、自介都用白話；工程術語只能放在標示「給工程師」的那一行、技能清單與工具名稱。`test/content.test.mjs` 有一個測試會擋下白話欄位裡的術語。
 
 ## 測試
@@ -107,10 +117,9 @@ test/                 node:test 單元測試
 
 ## 尚未完成（需要你提供資料或決定）
 
-- **email**：`src/content.js` 的 `profile.email` 目前是 `null`，所以 `contact` 只顯示 GitHub。
 - **分享預覽圖**（`og:image`）與 **網域 / canonical 網址**：還沒有，所以 `index.html` 沒有 `og:image`、`og:url`、`canonical`，也沒有 `sitemap.xml`。
 - **授權條款**：尚未選擇。
-- **Lighthouse**：尚未跑。目前的可及性與效能數據來自上面的自訂測試，不是 Lighthouse 分數。
+- **Lighthouse**（本機 `npx lighthouse@12`，桌面預設，連跑 6 次）：效能 100、無障礙 100、最佳實務 100、SEO 92，CLS 0.01；手機預設（單次）效能 98、CLS 0.05。SEO 少的 8 分是 `robots.txt` 項目：Lighthouse 從頁面內用 `fetch` 抓檔，被我們刻意嚴格的 CSP（沒有 `connect-src`）擋下，`robots.txt` 本身存在且回 200，爬蟲不受影響，所以不為此放寬 CSP。本機開發伺服器沒有壓縮與快取標頭，那幾項（壓縮、`no-store` 造成的 bfcache）要等部署到真正的主機才有意義。這次跑出並修掉的：版面位移（左右分屏在 JS 啟動前先把終端機固定在第 2 欄）、email 按鈕對比不足（瀏覽器預設按鈕底色）、`fx`／語言按鈕的無障礙名稱要包含可見文字。
 - **部署**：任何靜態主機都可以（GitHub Pages、Cloudflare Pages…）。所有路徑都是相對的，可放在子路徑。部署前先跑 `npm run check`。
 
 ## 備註

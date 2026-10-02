@@ -115,7 +115,8 @@ test('index.html: the overview pane and tabs exist and start hidden (JS reveals 
 test('stylesheet: split screen on wide screens, tabs on narrow ones, hidden in print', async () => {
   const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
   assert.match(css, /\.gui, \.tabs \{ display: none; \}/);
-  assert.match(css, /@media \(min-width: 1000px\)\s*\{[^@]*html\[data-hud="on"\] \.gui \{ display: flex; \}/);
+  assert.match(css, /@media \(min-width: 1000px\)\s*\{[^@]*html\[data-hud="on"\] \.gui \{ display: flex; grid-column: 1; \}/);
+  assert.match(css, /@media \(min-width: 1000px\)\s*\{[^@]*html\[data-hud="on"\] \.window \{[^}]*grid-column: 2;/, 'the terminal is pinned to column 2 so it does not jump when the overview appears');
   assert.match(css, /@media \(max-width: 999\.98px\)\s*\{[^@]*html\[data-hud="on"\] \.tabs \{ display: flex/);
   assert.match(css, /html\[data-hud="on"\]\[data-view="gui"\] \.window \{ display: none; \}/);
   assert.match(css, /@media print \{ \.gui, \.tabs \{ display: none !important; \} \}/);

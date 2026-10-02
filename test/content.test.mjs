@@ -186,3 +186,120 @@ test('the nuclear-sandbox project is presented as effects research and is explic
   assert.match(fx.en.nongoals, /not a finished|prototype/i);
   assert.match(fx.zh.nongoals, /原型|完成/);
 });
+
+test('the posture design is credited as a team project, never as sole authorship', () => {
+  const w = works.find((x) => x.slug === 'posture-wearable');
+  assert.match(w.en.summary, /by a team/i);
+  assert.match(w.zh.summary, /團隊/);
+  for (const lang of LANGS) assert.ok(!/\b(I designed|I built|my design)\b|我設計|我的設計/i.test(JSON.stringify(w[lang])), lang);
+});
+
+// ---- gallery: files, real dimensions, bilingual text, plain language -----------------------
+import { existsSync, readFileSync, statSync } from 'node:fs';
+import { gallery } from '../src/content.js';
+
+const rootUrl = (rel) => new URL(`../${rel}`, import.meta.url);
+
+/** Pixel size from a JPEG's SOF marker (no dependencies). */
+function jpegSize(buf) {
+  let i = 2;
+  while (i < buf.length) {
+    if (buf[i] !== 0xff) { i++; continue; }
+    const marker = buf[i + 1];
+    if ([0xc0, 0xc1, 0xc2].includes(marker)) return { height: buf.readUInt16BE(i + 5), width: buf.readUInt16BE(i + 7) };
+    i += 2 + buf.readUInt16BE(i + 2);
+  }
+  throw new Error('no SOF marker');
+}
+
+test('gallery: every file exists and its declared width/height are the real pixel sizes', () => {
+  assert.ok(gallery.length >= 4);
+  assert.equal(new Set(gallery.map((g) => g.slug)).size, gallery.length, 'unique slugs');
+  for (const g of gallery) {
+    const poster = g.kind === 'video' ? g.poster : g.src;
+    for (const rel of [g.src, g.thumb, ...(g.poster ? [g.poster] : [])]) assert.ok(existsSync(rootUrl(rel)), `${g.slug}: missing ${rel}`);
+    const full = jpegSize(readFileSync(rootUrl(poster)));
+    assert.deepEqual([g.width, g.height], [full.width, full.height], `${g.slug}: width/height must match the image (otherwise the page jumps while loading)`);
+    const thumb = jpegSize(readFileSync(rootUrl(g.thumb)));
+    assert.deepEqual([g.thumbWidth, g.thumbHeight], [thumb.width, thumb.height], `${g.slug}: thumbnail size`);
+    assert.ok(['image', 'video'].includes(g.kind));
+    if (g.kind === 'video') { assert.ok(g.src.endsWith('.mp4') && g.poster, `${g.slug}: a video needs an mp4 and a poster`); }
+  }
+});
+
+test('gallery: stays light (per-file and total budget)', () => {
+  let total = 0;
+  for (const g of gallery) {
+    for (const rel of [g.src, g.thumb, ...(g.poster ? [g.poster] : [])]) {
+      const kb = statSync(rootUrl(rel)).size / 1024;
+      total += kb;
+      assert.ok(kb < (rel.endsWith('.mp4') ? 600 : 200), `${rel} is ${kb.toFixed(0)} KB`);
+    }
+  }
+  assert.ok(total < 1200, `gallery assets total ${total.toFixed(0)} KB`);
+});
+
+test('gallery: text is complete in both languages, every image has real alt text, and captions say what the picture is not', () => {
+  for (const g of gallery) {
+    for (const lang of LANGS) {
+      const c = g[lang];
+      assert.ok(c.title && c.caption && c.alt, `${g.slug}/${lang}`);
+      assert.ok(c.alt.length >= (lang === 'en' ? 30 : 15), `${g.slug}/${lang}: alt text should describe the picture`);
+      assert.notEqual(c.alt, c.title, 'alt text is not just the title');
+      assert.ok(c.caption.length <= (lang === 'en' ? 420 : 200), `${g.slug}/${lang}: caption length ${c.caption.length}`);
+    }
+    if (g.work) assert.ok(works.some((w) => w.slug === g.work), `${g.slug}: unknown work ${g.work}`);
+    if (g.source) assert.match(g.source, /^https:\/\/github\.com\/qwertyboy0325\//);
+  }
+  const text = JSON.stringify(gallery.map((g) => g.en));
+  assert.match(text, /not a film-quality|not meant to look good|work in progress/i, 'the pictures are described honestly');
+});
+
+test('gallery: plain language and nothing private', () => {
+  const FORBIDDEN = ['/Users/', 'Ezra4', 'localhost', '127.0.0.1', 'token', 'password', 'NT$', 'client', '客戶'];
+  for (const g of gallery) {
+    for (const lang of LANGS) {
+      const text = JSON.stringify(g[lang]);
+      for (const word of FORBIDDEN) assert.ok(!text.includes(word), `"${word}" in ${g.slug}/${lang}`);
+      for (const word of JARGON) assert.ok(!new RegExp(`\\b${word.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, 'i').test(g[lang].caption + g[lang].title), `"${word}" in ${g.slug}/${lang}`);
+    }
+  }
+});
+
+test('gallery: provenance is documented next to the files', () => {
+  const sources = readFileSync(rootUrl('assets/gallery/SOURCES.md'), 'utf8');
+  for (const g of gallery) assert.ok(sources.includes(g.src.split('/').at(-1)), `${g.src} is not listed in SOURCES.md`);
+  assert.match(sources, /blackhole-rust/);
+});
+
+test('index.html: the CSP allows own images and media, and still nothing else', async () => {
+  const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
+  const csp = html.match(/Content-Security-Policy" content="([^"]+)"/)[1];
+  assert.match(csp, /img-src 'self'/);
+  assert.match(csp, /media-src 'self'/);
+  assert.ok(!/(img|media)-src[^;]*(https?:|data:|\*)/.test(csp), 'no external image or media origins');
+  assert.ok(!/connect-src/.test(csp), 'the deployed page cannot make network requests (only the dev server adds connect-src)');
+});
+
+/** Top-level MP4 box types in order (size + type, no dependencies). */
+function mp4Boxes(buf) {
+  const out = [];
+  for (let i = 0; i + 8 <= buf.length; ) {
+    let size = buf.readUInt32BE(i);
+    const type = buf.toString('latin1', i + 4, i + 8);
+    if (size === 1) size = Number(buf.readBigUInt64BE(i + 8)); // 64-bit size
+    if (size < 8) break;
+    out.push(type);
+    i += size;
+  }
+  return out;
+}
+
+test('video: the index (moov) comes before the data (mdat) so playback can start without reading the end of the file', () => {
+  for (const g of gallery.filter((x) => x.kind === 'video')) {
+    const boxes = mp4Boxes(readFileSync(rootUrl(g.src)));
+    assert.equal(boxes[0], 'ftyp', `${g.src}: not an MP4`);
+    assert.ok(boxes.includes('moov') && boxes.includes('mdat'), `${g.src}: ${boxes.join(',')}`);
+    assert.ok(boxes.indexOf('moov') < boxes.indexOf('mdat'), `${g.src}: moov is after mdat. Fix with: ffmpeg -i in.mp4 -c copy -movflags +faststart out.mp4`);
+  }
+});

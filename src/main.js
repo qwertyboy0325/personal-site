@@ -9,6 +9,9 @@ import { TRANSITION_MODES } from './fx/transition.js';
 import { createReticle, CURSOR_MODES } from './fx/reticle.js';
 import { createHud } from './hud.js';
 import { createGui } from './gui.js';
+import { createLightbox } from './lightbox.js';
+import { createWindows } from './windows.js';
+import { asciiFromImage } from './fx/imgascii.js';
 
 const $ = (id) => document.getElementById(id);
 const log = $('log');
@@ -85,6 +88,54 @@ const gui = createGui({ root: guiEl });
 gui.render(state.lang);
 const hud = createHud({ left: $('hud-left'), right: $('hud-right'), getState: () => ctx(), getPointer: () => reticle.pointer, reduceMotion });
 
+// ---- contact: copy the public email address (the buttons only exist when profile.email is set) ----
+let toastTimer = 0;
+function toast(message) {
+  const el = $('toast');
+  el.textContent = message;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
+}
+
+function fallbackCopy(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.setAttribute('readonly', '');
+  ta.className = 'sr';
+  document.body.append(ta);
+  ta.select();
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch { /* not allowed */ }
+  ta.remove();
+  return ok;
+}
+
+async function copyEmail(addr) {
+  if (!addr) return;
+  let ok = false;
+  try {
+    await navigator.clipboard.writeText(addr);
+    ok = true;
+  } catch {
+    ok = fallbackCopy(addr); // insecure context or permission denied
+  }
+  const t = ui[state.lang];
+  toast(ok ? t.contactCopied : t.contactFailed(addr)); // if copying is impossible, at least show the address
+}
+
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-copy]');
+  if (btn) copyEmail(btn.dataset.copy);
+});
+
+// Picture viewer window (native <dialog>): opened by clicking a picture in the terminal output.
+const lightbox = createLightbox({ getLang: () => state.lang, reduceMotion });
+// On wide screens with a mouse, pictures open in floating windows you can drag and stack; otherwise in the modal viewer above.
+const windows = createWindows({ getLang: () => state.lang, reduceMotion });
+const floatingViewer = matchMedia('(min-width: 1000px) and (hover: hover) and (pointer: fine)');
+const openPicture = (index, from) => (floatingViewer.matches ? windows.open(index, from) : lightbox.open(index, from));
+
 function setView(view) {
   document.documentElement.dataset.view = view;
   tabs.querySelectorAll('[data-view]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === view)));
@@ -138,6 +189,43 @@ function startNewFaces() {
   }
 }
 
+const ASCII_COLS = 64;
+const ASCII_HOLD_MS = 1000;
+
+/** A picture first appears as ASCII art made from its own pixels, then dissolves into the real image. */
+async function animateImage(fig) {
+  const img = fig.querySelector('.shot-img');
+  const pre = fig.querySelector('.shot-ascii');
+  if (!img || !pre || reduceMotion || state.transition === 'off') return; // the real image is already showing
+  try {
+    fig.classList.add('is-ascii'); // hide the real image (it keeps its space, so nothing jumps)
+    await img.decode();
+    const box = img.getBoundingClientRect();
+    const text = asciiFromImage(img, { cols: ASCII_COLS, invert: ctx().theme === 'light' });
+    pre.textContent = text;
+    // Size the text so ASCII_COLS characters span the image exactly, using this font's real character width.
+    const probe = document.createElement('canvas').getContext('2d');
+    probe.font = `100px ${getComputedStyle(pre).fontFamily}`;
+    const charWidth = (probe.measureText('M').width || 60) / 100; // as a fraction of the font size
+    pre.style.fontSize = `${box.width / (ASCII_COLS * charWidth)}px`;
+    pre.style.lineHeight = `${box.height / text.split('\n').length}px`;
+    pre.hidden = false;
+    await new Promise((r) => setTimeout(r, ASCII_HOLD_MS));
+  } catch {
+    // decoding or reading pixels failed: just show the real image
+  }
+  pre.hidden = true;
+  fig.classList.remove('is-ascii');
+  trans.revealEntry(fig.querySelector('.shot-open') ?? fig); // dissolve only over the picture itself, never the whole entry
+}
+
+function startNewImages() {
+  for (const fig of log.querySelectorAll('[data-image]:not([data-started])')) {
+    fig.dataset.started = '';
+    animateImage(fig);
+  }
+}
+
 function applyFx(mode, persist) {
   state.fx = mode;
   document.documentElement.dataset.fx = mode === 'off' ? 'off' : 'on';
@@ -155,8 +243,10 @@ function print(blocks, { reveal = true } = {}) {
   log.insertAdjacentHTML('beforeend', renderEntry(blocks, { ps1: PS1 }));
   startNewFaces();
   startNewModels();
+  startNewImages();
   scrollToEnd();
-  if (reveal) trans.revealEntry(log.lastElementChild);
+  // Entries with a picture run their own ASCII-to-image reveal instead of the generic overlay.
+  if (reveal && !blocks.some((b) => b.t === 'image')) trans.revealEntry(log.lastElementChild);
 }
 
 function applyTheme(name, persist) {
@@ -179,16 +269,23 @@ function applyLang(lang, persist) {
   chips.setAttribute('aria-label', t.chipsLabel);
   $('btn-theme').setAttribute('aria-label', t.themeButton);
   $('btn-theme').title = t.themeButton;
-  $('btn-lang').setAttribute('aria-label', t.langButton);
-  $('btn-lang').title = t.langButton;
+  // The accessible name must contain the visible text (WCAG 2.5.3 "Label in Name"), so voice control ("click EN") works.
   $('btn-lang').textContent = lang === 'zh' ? 'EN' : '中';
-  $('btn-fx').setAttribute('aria-label', t.fxButton);
+  $('btn-lang').setAttribute('aria-label', `${t.langButton} (${$('btn-lang').textContent})`);
+  $('btn-lang').title = t.langButton;
+  $('btn-fx').setAttribute('aria-label', `${t.fxButton} (${$('btn-fx').textContent})`);
   $('btn-fx').title = t.fxButton;
   document.querySelector('.skip').textContent = t.skip;
   tabs.setAttribute('aria-label', t.gui.tabs);
   tabs.querySelector('[data-view="gui"]').textContent = t.gui.tabGui;
   tabs.querySelector('[data-view="term"]').textContent = t.gui.tabTerm;
+  for (const b of [$('btn-mail'), $('tab-mail')]) {
+    b.setAttribute('aria-label', t.contactButton);
+    b.title = t.contactButton;
+  }
   gui.render(lang);
+  lightbox.refresh();
+  windows.refresh();
   if (persist) store.set('lang', lang);
 }
 
@@ -308,6 +405,10 @@ function onCommandClick(e) {
   if (finePointer) input.focus({ preventScroll: true });
 }
 log.addEventListener('click', onCommandClick);
+log.addEventListener('click', (e) => {
+  const open = e.target.closest('.shot-open');
+  if (open) openPicture(Number(open.dataset.open) - 1, open);
+});
 chips.addEventListener('click', onCommandClick);
 guiEl.addEventListener('click', onCommandClick); // cards and the recent-commands list
 tabs.addEventListener('click', (e) => {
@@ -349,6 +450,10 @@ chips.hidden = false;
 window.__siteReady = true; // tells src/guard.js the terminal is operable
 document.querySelector('.boot-fail')?.remove(); // it may have appeared on a very slow load
 $('btn-fx').hidden = false;
+if (profile.email) {
+  // Persistent contact buttons: in the terminal's title bar and in the narrow-screen tab bar.
+  for (const b of [$('btn-mail'), $('tab-mail')]) { b.dataset.copy = profile.email; b.hidden = false; }
+}
 reticle.setMode(state.reticle);
 setView('term');
 applyHud(state.hud === 'on');

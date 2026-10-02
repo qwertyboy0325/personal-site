@@ -6,7 +6,8 @@ import { readFile } from 'node:fs/promises';
 const source = await readFile(new URL('../src/guard.js', import.meta.url), 'utf8');
 
 /** Run guard.js in an isolated fake browser and hand back the pieces to poke at. */
-function boot({ hasScreen = true } = {}) {
+function boot({ hasScreen = true, stored = null, storageThrows = false } = {}) {
+  const root = { dataset: {} };
   const listeners = {};
   const docListeners = {};
   const prepended = [];
@@ -21,8 +22,10 @@ function boot({ hasScreen = true } = {}) {
       getElementById: () => (hasScreen ? screenNode : null),
       querySelector: (sel) => (sel === '.boot-fail' && prepended.length ? prepended[0] : null),
       body: bodyNode,
+      documentElement: root,
       addEventListener: (t, f) => { docListeners[t] = f; },
     },
+    localStorage: { getItem: (k) => { if (storageThrows) throw new Error('blocked'); return k === 'hud' ? stored : null; } },
     navigator: { userAgent: 'TestBrowser/27.0' },
     location: { protocol: 'http:' },
     setTimeout: (f, ms) => { timers.push({ f, ms }); return timers.length; },
@@ -31,7 +34,7 @@ function boot({ hasScreen = true } = {}) {
   sandbox.window = sandbox;
   vm.createContext(sandbox);
   vm.runInContext(source, sandbox);
-  return { sandbox, listeners, docListeners, prepended, timers };
+  return { sandbox, listeners, docListeners, prepended, timers, root };
 }
 
 const textOf = (n) => [n.textContent, ...n.children.map(textOf)].join('\n');
@@ -123,4 +126,11 @@ test('index.html loads the guard first, as a classic script, and main.js declare
   assert.match(js, /window\.__siteReady = true/);
   const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
   assert.match(css, /\.boot-fail \{/);
+});
+
+test('guard: reserves the split-screen layout before first paint (no jump when the overview appears)', () => {
+  assert.equal(boot().root.dataset.hud, 'on', 'default: overview on');
+  assert.equal(boot({ stored: 'off' }).root.dataset.hud, 'off', 'a saved "off" is respected');
+  assert.equal(boot({ stored: 'banana' }).root.dataset.hud, 'on', 'anything else means on, like main.js');
+  assert.equal(boot({ storageThrows: true }).root.dataset.hud, 'on', 'blocked storage does not break it');
 });
