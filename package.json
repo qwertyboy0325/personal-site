@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "license": "MIT",
-  "description": "Console-style, single-page interactive personal site. No framework, no build step for the app itself.",
+  "description": "Single-page personal site about light: photographs that develop out of letters, a black hole rendered from physics, a camera mirror, and a terminal inside. No framework, no build step for the app itself.",
   "type": "module",
   "engines": { "node": ">=20" },
   "scripts": {

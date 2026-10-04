@@ -6,7 +6,7 @@ import { readFile } from 'node:fs/promises';
 const source = await readFile(new URL('../src/guard.js', import.meta.url), 'utf8');
 
 /** Run guard.js in an isolated fake browser and hand back the pieces to poke at. */
-function boot({ hasScreen = true, stored = null, storageThrows = false } = {}) {
+function boot({ hasScreen = true } = {}) {
   const root = { dataset: {} };
   const listeners = {};
   const docListeners = {};
@@ -25,7 +25,6 @@ function boot({ hasScreen = true, stored = null, storageThrows = false } = {}) {
       documentElement: root,
       addEventListener: (t, f) => { docListeners[t] = f; },
     },
-    localStorage: { getItem: (k) => { if (storageThrows) throw new Error('blocked'); return k === 'hud' ? stored : null; } },
     navigator: { userAgent: 'TestBrowser/27.0' },
     location: { protocol: 'http:' },
     setTimeout: (f, ms) => { timers.push({ f, ms }); return timers.length; },
@@ -64,7 +63,7 @@ test('guard: shows a notice with the real error when the app never became ready'
   assert.equal(box.attrs.role, 'alert');
   const text = textOf(box);
   assert.match(text, /did not start/);
-  assert.match(text, /互動式終端機沒有/, 'bilingual');
+  assert.match(text, /互動部分沒有/, 'bilingual');
   assert.match(text, /TypeError: x is not a function \(main\.js:12:7\)/);
   assert.match(text, /TestBrowser\/27\.0/, 'includes the browser string');
   assert.match(text, /protocol: http:/);
@@ -111,7 +110,7 @@ test('guard: never injects HTML (everything is textContent) and shows once only'
   assert.equal(prepended.length, 2, 'the timer does not add a second notice');
 });
 
-test('guard: falls back to <body> when the page has no #screen', () => {
+test('guard: falls back to <body> when the page has no <main>', () => {
   const { timers, prepended } = boot({ hasScreen: false });
   timers[0].f();
   assert.equal(prepended.length, 1);
@@ -128,10 +127,9 @@ test('index.html loads the guard first, as a classic script, and main.js declare
   assert.match(css, /\.boot-fail \{/);
 });
 
-test('guard: reserves the split-screen layout before first paint (no jump when the overview appears)', () => {
-  assert.equal(boot().root.dataset.hud, 'on', 'default: overview on');
-  assert.equal(boot({ stored: 'off' }).root.dataset.hud, 'off', 'a saved "off" is respected');
-  assert.equal(boot({ stored: 'banana' }).root.dataset.hud, 'on', 'anything else means on, like main.js');
-  assert.equal(boot({ storageThrows: true }).root.dataset.hud, 'on', 'blocked storage does not break it');
-  assert.equal(boot().root.dataset.dock, 'on', 'space for the dock is reserved too');
+test('guard: changes nothing on the page before something goes wrong (no layout to reserve any more)', () => {
+  const { root, prepended, timers } = boot();
+  assert.deepEqual(root.dataset, {});
+  assert.equal(prepended.length, 0);
+  assert.equal(timers.length, 1, 'only the watchdog timer');
 });

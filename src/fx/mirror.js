@@ -125,8 +125,9 @@ export function stopMirror() {
 /**
  * Wire up a mirror figure (see renderMirror in render.js). `getInvert()` says whether the light theme is on;
  * `t` holds the wording (status, errors, toast text); `onCopied(ok)` is told how copying went.
+ * `stage: false` keeps the picture in the page's own box (the home page's light-box) instead of the big view.
  */
-export function createMirror(fig, { t, getInvert = () => false, reduceMotion = false, onCopied = () => {} }) {
+export function createMirror(fig, { t, getInvert = () => false, reduceMotion = false, onCopied = () => {}, stage: useStage = true }) {
   const inlinePre = fig.querySelector('.mirror-ascii');
   const start = fig.querySelector('[data-mirror-start]');
   const stopBtn = fig.querySelector('[data-mirror-stop]');
@@ -360,7 +361,7 @@ export function createMirror(fig, { t, getInvert = () => false, reduceMotion = f
       sinceAdapt = 0;
       quality = 1;
       full = false;
-      openStage(); // the big view (falls back to the page's own box if the browser cannot show a <dialog>)
+      if (useStage) openStage(); // the big view (falls back to the page's own box if the browser cannot show a <dialog>)
       out.dataset.cw = '';
       setState('live', t.live);
       measure();

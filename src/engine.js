@@ -3,20 +3,16 @@
 // terminal can be tested under Node.
 
 import { profile, projects, works, gallery, skillGroups, THEMES, LANGS, LANG_NAMES, ui, banner } from './content.js';
-import { FX_MODES } from './fx/fx.js';
 import { TRANSITION_MODES } from './fx/transition.js';
-import { CURSOR_MODES } from './fx/reticle.js';
 import { SHAPES, REST_POSE, renderFrame } from './fx/ascii3d.js';
 import { renderFace } from './fx/face.js';
 import { isPhoto, formatShot } from './photos.js';
 
 /** Photography only appears (command, help, aliases) once there is at least one photo in the gallery. */
 export const HAS_PHOTOS = gallery.some(isPhoto);
-export const PUBLIC_COMMANDS = ['about', 'projects', 'works', 'gallery', ...(HAS_PHOTOS ? ['photos'] : []), 'view', 'skills', 'contact', 'ls', 'cat', 'open', 'theme', 'lang', 'ascii', '3d', 'fx', 'transition', 'cursor', 'hud', 'mode', 'mirror', 'clear', 'history', 'help'];
+export const PUBLIC_COMMANDS = ['about', 'projects', 'works', 'gallery', ...(HAS_PHOTOS ? ['photos'] : []), 'view', 'skills', 'contact', 'ls', 'cat', 'open', 'theme', 'lang', 'ascii', '3d', 'transition', 'mode', 'mirror', 'clear', 'history', 'help'];
 const HIDDEN_COMMANDS = ['home', 'project', 'work', 'whoami', 'date', 'echo', 'neofetch', 'sudo', 'exit'];
-const ALIASES = { '~': 'home', face: 'ascii', gui: 'hud', images: 'gallery', pictures: 'gallery', ...(HAS_PHOTOS ? { photo: 'photos', photography: 'photos' } : {}), repos: 'projects', '?': 'help', man: 'help', cls: 'clear', dir: 'ls', ll: 'ls' };
-/** Commands whose output is addressable through the URL hash. */
-export const HUD_MODES = ['on', 'off'];
+const ALIASES = { '~': 'home', face: 'ascii', images: 'gallery', pictures: 'gallery', ...(HAS_PHOTOS ? { photo: 'photos', photography: 'photos' } : {}), repos: 'projects', '?': 'help', man: 'help', cls: 'clear', dir: 'ls', ll: 'ls' };
 /** `page`: each page replaces the last (like a document); `log`: every command's output stays and scrolls (like a classic terminal). */
 export const LAYOUT_MODES = ['page', 'log'];
 /** Typing a shape's name on its own (`cube`) is a shortcut for `3d cube`. */
@@ -325,7 +321,7 @@ const commands = {
     const t = T(ctx);
     const all = THEMES.join(', ');
     if (!args.length) return { blocks: [p(t.themeCurrent(ctx.theme, all))] };
-    const q = args[0].toLowerCase();
+    const q = args[0].toLowerCase().replace(/^(\d{4})$/, '$1k'); // `theme 2700` means 2700k
     if (!THEMES.includes(q)) return { blocks: [err(t.themeBad(args[0], all))] };
     return { blocks: [p({ ok: t.themeSet(q) })], effects: [{ type: 'theme', value: q }] };
   },
@@ -348,15 +344,6 @@ const commands = {
     };
   },
 
-  // Background effect: Matrix rain and/or a drifting point network.
-  hud(args, ctx) {
-    const t = T(ctx);
-    const all = HUD_MODES.join(', ');
-    if (!args.length) return { blocks: [p(t.hudCurrent(ctx.hud ?? 'on', all))] };
-    const q = args[0].toLowerCase();
-    if (!HUD_MODES.includes(q)) return { blocks: [err(t.hudBad(args[0], all))] };
-    return { blocks: [p({ ok: t.hudSet(q) })], effects: [{ type: 'hud', value: q }] };
-  },
 
   mirror(args, ctx) {
     const t = T(ctx);
@@ -374,14 +361,6 @@ const commands = {
     return { blocks: [p({ ok: t.modeSet(q) })], effects: [{ type: 'mode', value: q }] };
   },
 
-  cursor(args, ctx) {
-    const t = T(ctx);
-    const all = CURSOR_MODES.join(', ');
-    if (!args.length) return { blocks: [p(t.cursorCurrent(ctx.cursor ?? 'off', all))] };
-    const q = args[0].toLowerCase();
-    if (!CURSOR_MODES.includes(q)) return { blocks: [err(t.cursorBad(args[0], all))] };
-    return { blocks: [p({ ok: t.cursorSet(q) })], effects: [{ type: 'cursor', value: q }] };
-  },
 
   '3d'(args, ctx) {
     const t = T(ctx);
@@ -406,14 +385,6 @@ const commands = {
     return { blocks: [p({ ok: t.transitionSet(q) })], effects: [{ type: 'transition', value: q }] };
   },
 
-  fx(args, ctx) {
-    const t = T(ctx);
-    const all = FX_MODES.join(', ');
-    if (!args.length) return { blocks: [p(t.fxCurrent(ctx.fx ?? 'off', all))] };
-    const q = args[0].toLowerCase();
-    if (!FX_MODES.includes(q)) return { blocks: [err(t.fxBad(args[0], all))] };
-    return { blocks: [p({ ok: t.fxSet(q) })], effects: [{ type: 'fx', value: q }] };
-  },
 
   clear: () => ({ blocks: [], effects: [{ type: 'clear' }] }),
 
@@ -480,11 +451,8 @@ function argCandidates(cmd) {
   switch (cmd) {
     case 'theme': return THEMES;
     case 'lang': return LANGS;
-    case 'fx': return FX_MODES;
     case 'transition': return TRANSITION_MODES;
     case '3d': return SHAPES;
-    case 'cursor': return CURSOR_MODES;
-    case 'hud': return HUD_MODES;
     case 'mode': return LAYOUT_MODES;
     case 'mirror': return ['off'];
     case 'cat': return [...FILES, 'projects/', ...projectNames.map((s) => `projects/${s}`)];

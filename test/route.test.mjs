@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { routeFor, lineForHash, titleFor, crumbsFor, documentTitle } from '../src/route.js';
+import { routeFor, lineForHash, titleFor, documentTitle } from '../src/route.js';
 import { execute, PUBLIC_COMMANDS, complete, LAYOUT_MODES } from '../src/engine.js';
 import { renderEntry } from '../src/render.js';
 import { projects, works, gallery, ui } from '../src/content.js';
@@ -81,7 +81,7 @@ test('lineForHash keeps the old section addresses working (#works, #contact...)'
   for (const name of ['about', 'projects', 'works', 'gallery', 'skills', 'contact', 'help']) assert.equal(lineForHash(`#${name}`), name);
 });
 
-test('titles and breadcrumbs', () => {
+test('titles', () => {
   assert.equal(titleFor(routeFor('home'), 'en'), 'Home');
   assert.equal(titleFor(routeFor('projects'), 'zh'), '專案');
   assert.equal(titleFor(routeFor(`project ${projects[0].slug}`), 'en'), projects[0].slug);
@@ -90,13 +90,7 @@ test('titles and breadcrumbs', () => {
   assert.equal(documentTitle(routeFor('home'), 'en'), ui.en.documentTitle);
   assert.equal(documentTitle(routeFor('projects'), 'en'), `Projects — ${ui.en.documentTitle}`);
   assert.equal(documentTitle(null, 'zh'), ui.zh.documentTitle);
-  assert.deepEqual(crumbsFor(routeFor('home')), [{ label: '~', cmd: 'home' }]);
-  assert.deepEqual(crumbsFor(routeFor('about')), [{ label: '~', cmd: 'home' }, { label: 'about', cmd: null }]);
-  assert.deepEqual(crumbsFor(routeFor('project 1')), [{ label: '~', cmd: 'home' }, { label: 'projects', cmd: 'projects' }, { label: projects[0].slug, cmd: null }]);
-  assert.deepEqual(crumbsFor(routeFor(`view ${firstPhoto.slug}`)).map((c) => c.cmd), ['home', 'photos', null]);
-  assert.deepEqual(crumbsFor(null), [{ label: '~', cmd: 'home' }]);
   for (const lang of ['en', 'zh']) for (const k of ['home', 'about', 'projects', 'works', 'gallery', 'photos', 'skills', 'contact', 'help', 'mirror']) assert.ok(ui[lang].pages[k], `${lang}.pages.${k}`);
-  for (const lang of ['en', 'zh']) assert.ok(ui[lang].nav.label && ui[lang].nav.back && ui[lang].nav.forward);
 });
 
 test('home and mode commands', () => {
@@ -139,32 +133,34 @@ test('sheet blocks render as accessible thumbnails that open the viewer, with th
 
 const read = (rel) => readFile(new URL(`../${rel}`, import.meta.url), 'utf8');
 
-test('index.html: the location bar sits between the title bar and the screen, starts hidden, with named buttons', async () => {
+test('index.html: the terminal is a drawer that starts hidden, with a named close button, a prompt and quick commands', async () => {
   const html = await read('index.html');
-  const bar = html.match(/<nav class="crumbs" id="crumbs" aria-label="Location" hidden>([\s\S]*?)<\/nav>/);
-  assert.ok(bar, 'the nav exists');
-  assert.ok(html.indexOf('</header>') < html.indexOf('id="crumbs"') && html.indexOf('id="crumbs"') < html.indexOf('id="screen"'));
-  assert.match(bar[1], /<button type="button" class="crumb-step" id="crumb-back" aria-label="Back" title="Back" disabled>/);
-  assert.match(bar[1], /<button type="button" class="crumb-step" id="crumb-fwd" aria-label="Forward" title="Forward" disabled>/);
-  assert.match(bar[1], /<ol class="crumb-path" id="crumb-path"><\/ol>/);
+  const drawer = html.match(/<section class="term" id="term" aria-label="Terminal" hidden>([\s\S]*?)<\/section>/);
+  assert.ok(drawer, 'the drawer exists and starts hidden');
+  assert.match(drawer[1], /<button type="button" class="tool" id="term-close" aria-label="Close the terminal" title="Close the terminal">/);
+  assert.match(drawer[1], /<form id="prompt" class="prompt"/);
+  assert.match(drawer[1], /<nav class="chips" id="chips" aria-label="Quick commands">/);
+  assert.match(html, /<button type="button" class="cmdline" id="cmdline" aria-controls="term" aria-expanded="false" hidden>/, 'the command line opens it, once the script runs');
+  assert.ok(html.indexOf('<!-- prerender:end -->') < html.indexOf('id="term"'), 'after the page, so reading order is the page first');
 });
 
-test('stylesheet: the location bar keeps its space before JS reveals it, is touch-sized on phones, and is not printed', async () => {
+test('stylesheet: the drawer sits above the page, the command line hides while it is open, contact sheets keep their shape', async () => {
   const css = await read('src/styles.css');
-  assert.match(css, /html\[data-hud\] \.crumbs\[hidden\] \{ display: flex !important; visibility: hidden; \}/);
-  assert.match(css, /@media \(pointer: coarse\), \(max-width: 640px\) \{ \.crumb-step \{ min-width: 44px; min-height: 44px; \}/);
-  assert.match(css, /@media print \{ \.crumbs \{ display: none !important; \} \}/);
+  assert.match(css, /\.term \{ position: fixed;[^}]*bottom: 0;/);
+  assert.match(css, /html\[data-drawer="open"\] \.cmdline \{ display: none; \}/);
+  assert.match(css, /\.chip \{[^}]*min-height: 32px/);
+  assert.match(css, /@media print \{[^}]*\.term/, 'not printed');
   assert.match(css, /\.sheet \{ display: grid; grid-template-columns: repeat\(auto-fill, minmax\(132px, 1fr\)\);/);
   assert.match(css, /\.sheet-open \{[^}]*aspect-ratio: 3 \/ 2;/, 'every cell has the same shape, whatever the picture');
   assert.match(css, /\.sheet-img \{[^}]*object-fit: contain;/, 'portrait pictures are not cropped');
 });
 
-test('main.js: pages replace each other, push history entries, and answer Back / Forward and hand-typed addresses', async () => {
+test('main.js: addresses of page parts scroll, other addresses open the terminal on that page, and pages replace each other', async () => {
   const src = await read('src/main.js');
-  assert.match(src, /import \{ routeFor, lineForHash, crumbsFor, documentTitle \} from '\.\/route\.js'/);
-  assert.match(src, /history\.pushState\(\{ i: state\.navI \}/);
-  assert.match(src, /addEventListener\('popstate'/);
-  assert.ok(!src.includes("addEventListener('hashchange'"), 'one handler for address changes (popstate also fires for hash edits)');
+  assert.match(src, /import \{ lineForHash, documentTitle \} from '\.\/route\.js'/);
+  assert.match(src, /if \(!id \|\| document\.getElementById\(id\)\) return;/, '#photos, #about... are left to the browser');
+  assert.match(src, /addEventListener\('hashchange', followHash\)/);
+  assert.ok(!/history\.pushState/.test(src), 'the terminal no longer adds history entries of its own');
   assert.match(src, /if \(asPage\) \{ stopFaces\(\); log\.replaceChildren\(\); \}/);
   assert.match(src, /store\.set\('mode', fx\.value\)/);
   assert.match(src, /closest\('\.shot-open, \.sheet-open'\)/, 'thumbnails on a sheet open the viewer');

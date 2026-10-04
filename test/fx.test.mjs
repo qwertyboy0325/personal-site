@@ -1,9 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRain, GLYPHS, hash } from '../src/fx/rain.js';
-import { createNetwork } from '../src/fx/network.js';
 import { renderFace, FACE } from '../src/fx/face.js';
-import { FX_MODES } from '../src/fx/fx.js';
 import { execute, complete } from '../src/engine.js';
 import { block } from '../src/render.js';
 
@@ -63,49 +61,7 @@ test('rain: columns recycle, so the simulation never runs out', () => {
   assert.ok(ctx.calls.fillText.length > 0);
 });
 
-// ---- network -------------------------------------------------------------------
-test('network: point count scales with area and stays within 24..90', () => {
-  const net = createNetwork(seeded(5));
-  net.resize(320, 480);
-  assert.equal(net.points.length, 24);
-  net.resize(3840, 2160);
-  assert.equal(net.points.length, 90);
-  net.resize(1280, 720);
-  assert.ok(net.points.length > 24 && net.points.length < 90);
-});
-
-test('network: points stay inside the viewport, even when the pointer pushes them', () => {
-  const net = createNetwork(seeded(9));
-  net.resize(900, 600);
-  for (let i = 0; i < 2000; i++) net.update(0.016, { x: 450, y: 300 });
-  for (const p of net.points) {
-    assert.ok(p.x >= 0 && p.x <= 900 && p.y >= 0 && p.y <= 600);
-    assert.ok(Number.isFinite(p.vx) && Number.isFinite(p.vy));
-  }
-});
-
-test('network: draws lines only between points that are close enough', () => {
-  const net = createNetwork(seeded(2));
-  net.resize(600, 400);
-  const far = net.points.splice(0);
-  net.points.push({ x: 0, y: 0, vx: 0, vy: 0 }, { x: net.reach * 0.5, y: 0, vx: 0, vy: 0 }, { x: 590, y: 390, vx: 0, vy: 0 });
-  const ctx = fakeCtx();
-  net.draw(ctx, { head: '#fff', body: '#0f0' }, 1, null);
-  assert.equal(ctx.calls.moveTo, 1, 'one pair is within reach');
-  assert.equal(ctx.calls.arc, 3, 'every point is drawn');
-  assert.ok(far.length > 0);
-});
-
-test('network: points near the pointer connect to it', () => {
-  const net = createNetwork(seeded(2));
-  net.resize(600, 400);
-  net.points.splice(0, net.points.length, { x: 300, y: 200, vx: 0, vy: 0 });
-  const ctx = fakeCtx();
-  net.draw(ctx, { head: '#fff', body: '#0f0' }, 1, { x: 320, y: 210 });
-  assert.equal(ctx.calls.moveTo, 1);
-});
-
-// ---- ASCII face ----------------------------------------------------------------
+// ---- face ----------------------------------------------------------------------
 const lines = (s) => s.split('\n');
 
 test('face: fits its grid and only uses printable ASCII once resolved', () => {
@@ -152,23 +108,14 @@ test('face: never emits NaN or undefined for extreme inputs', () => {
 });
 
 // ---- commands and rendering ----------------------------------------------------
-const ctx = (over = {}) => ({ lang: 'en', theme: 'dark', fx: 'both', history: [], ...over });
+const ctx = (over = {}) => ({ lang: 'en', theme: 'dark', history: [], ...over });
 const text = (blocks) => JSON.stringify(blocks);
 
-test('fx command: shows the current mode, sets a valid one, rejects an invalid one', () => {
-  assert.match(text(execute('fx', ctx({ fx: 'rain' })).blocks), /fx: rain/);
-  const set = execute('fx network', ctx());
-  assert.deepEqual(set.effects, [{ type: 'fx', value: 'network' }]);
-  for (const mode of FX_MODES) assert.equal(execute(`fx ${mode}`, ctx()).effects[0].value, mode);
-  const bad = execute('fx disco', ctx());
-  assert.deepEqual(bad.effects, []);
-  assert.match(text(bad.blocks), /unknown mode/);
-});
-
-test('fx command: confirms in zh and completes its arguments', () => {
-  assert.match(text(execute('fx off', ctx({ lang: 'zh' })).blocks), /背景特效/);
-  assert.deepEqual(complete('fx n').line, 'fx network ');
-  assert.deepEqual(complete('fx ').options.sort(), [...FX_MODES].sort());
+test('the old background, cursor and overview settings are gone: the page is lit by its photographs now', () => {
+  for (const name of ['fx', 'cursor', 'hud', 'gui']) {
+    assert.match(text(execute(name, ctx()).blocks), /command not found/, name);
+    assert.ok(!complete(name.slice(0, 2)).options.includes(name), name);
+  }
 });
 
 test('ascii command: returns an accessible, animatable face block with a static frame', () => {

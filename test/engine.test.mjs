@@ -62,9 +62,11 @@ test('prototype-polluting names are treated as unknown, not executed', () => {
 });
 
 test('theme: shows current, sets valid, rejects invalid', () => {
-  assert.match(text('theme'), /theme: dark/);
-  const ok = execute('theme light', ctx());
-  assert.deepEqual(ok.effects, [{ type: 'theme', value: 'light' }]);
+  assert.match(text('theme'), /theme: dark/); // shows whatever the page reports
+  const ok = execute('theme 2700k', ctx());
+  assert.deepEqual(ok.effects, [{ type: 'theme', value: '2700k' }]);
+  assert.deepEqual(execute('theme 3400', ctx()).effects, [{ type: 'theme', value: '3400k' }], 'a bare temperature means kelvin');
+  assert.deepEqual(execute('theme light', ctx()).effects, [], 'the old light/dark themes are gone');
   const bad = execute('theme neon', ctx());
   assert.deepEqual(bad.effects, []);
   assert.match(renderBlocks(bad.blocks), /unknown theme/);
@@ -141,7 +143,9 @@ test('echo output is HTML-escaped (no injection through the terminal)', () => {
 
 test('completion: commands, arguments, paths', () => {
   assert.deepEqual(complete('ab'), { line: 'about ', options: [] });
-  assert.deepEqual(complete('theme a'), { line: 'theme amber ', options: [] });
+  assert.deepEqual(complete('theme a'), { line: 'theme auto ', options: [] });
+  assert.deepEqual(complete('theme 27'), { line: 'theme 2700k ', options: [] });
+  assert.deepEqual(complete('theme 2'), { line: 'theme 2', options: ['2700k', '2200k'] });
   assert.deepEqual(complete('lang z'), { line: 'lang zh ', options: [] });
   assert.deepEqual(complete('cat pro'), { line: 'cat projects/', options: [] });
   assert.deepEqual(complete('cat projects/vox'), { line: 'cat projects/vox-proof ', options: [] });

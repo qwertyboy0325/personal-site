@@ -1,7 +1,7 @@
-// Where a command line "lives": the page it shows, its address (URL hash), its
-// breadcrumb and its title. Pure functions over the site data, so they run (and are
-// tested) under Node. main.js uses them to show one page at a time, to give every
-// page its own URL, and to make the browser's Back / Forward buttons work.
+// Where a command line "lives": the page it shows, its address (URL hash) and its
+// title. Pure functions over the site data, so they run (and are tested) under Node.
+// main.js uses them so an address such as #works/black-hole opens the terminal on
+// that page (addresses that name a part of the home page, like #photos, just scroll).
 //
 //   projects                  -> #projects
 //   project handoff-semantics -> #projects/handoff-semantics
@@ -77,14 +77,6 @@ export function titleFor(route, lang) {
   if (section === 'projects') return slug;
   const entry = (section === 'works' ? works : gallery).find((x) => x.slug === slug);
   return entry?.[lang]?.title ?? slug;
-}
-
-/** Breadcrumb parts: `~ / projects / handoff-semantics`. Every part but the last is a command you can run. */
-export function crumbsFor(route) {
-  const out = [{ label: '~', cmd: 'home' }];
-  if (!route) return out;
-  route.path.forEach((seg, i) => out.push({ label: seg, cmd: i < route.path.length - 1 ? route.path[0] : null }));
-  return out;
 }
 
 /** The document title for a page. */

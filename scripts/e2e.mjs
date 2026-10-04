@@ -4,8 +4,8 @@
 //
 //   npm run e2e
 
-import { execFileSync, spawn } from 'node:child_process';
-import { cp, mkdir, mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
+import { spawn } from 'node:child_process';
+import { mkdir, mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -84,1548 +84,171 @@ const load = async (url = BASE) => {
 // Generous on purpose: a busy machine (a render running in another app) must not make the suite flaky.
 const bootDone = () => until(() => ev(`document.getElementById('log').getAttribute('aria-live') === 'polite'`), 20000, 'boot');
 
+const scrollTo = (id) => ev(`document.getElementById('${id}').scrollIntoView({ behavior: 'instant', block: 'start' })`);
+const termOpen = () => ev(`!document.getElementById('term').hidden`);
+const noSideways = () => ev(`document.documentElement.scrollWidth - innerWidth <= 0`);
+
 try {
   await send('Page.enable'); await send('Runtime.enable'); await send('Log.enable');
-  await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }] });
   // Pin the browser language so results do not depend on the machine's locale.
   const setLanguage = async (acceptLanguage) => send('Emulation.setUserAgentOverride', { userAgent: await ev('navigator.userAgent'), acceptLanguage });
   await setLanguage('en-US');
 
-  // ---- desktop, real boot animation ---------------------------------------------
-  console.log('desktop / boot');
-  await viewport(1280, 800);
+  // ---- the page ------------------------------------------------------------------
+  console.log('desktop / the page');
+  await viewport(1440, 900);
   await load();
-  await sleep(300);
-  await shot('01-boot-midway');
-  await bootDone();
+  await until(() => ev(`window.__siteReady === true`), 5000, 'ready');
+  await sleep(500);
+  await shot('01-hero-developing', 0);
+  check(await ev(`!!document.querySelector('.hero .dev-canvas')`), 'the hero develops out of letters on a canvas over the photo');
+  await until(() => ev(`!document.querySelector('.hero .pic').classList.contains('is-dev')`), 6000, 'hero developed');
+  check((await ev(`document.querySelector('.hero [data-exif]').textContent`)) === '14mm · f/22 · 1/125', 'the exposure readout lands on the real values');
   check((await ev(`document.title`)).startsWith('Ezra Wu'), 'title set');
-  check(await ev(`!document.getElementById('prompt').hidden && !document.getElementById('chips').hidden`), 'prompt and chips revealed by JS');
-  check((await logText()).includes('Backend / Platform Engineer'), 'welcome rendered');
-  check(await ev(`document.activeElement.id === 'cmd'`), 'input focused on desktop');
-  await shot('02-welcome-dark');
+  check((await ev(`document.querySelectorAll('h1').length`)) === 1 && (await ev(`document.querySelector('h1').textContent`)) === 'Ezra Wu', 'one h1: the name');
+  check(await ev(`!document.getElementById('cmdline').hidden && !document.getElementById('btn-theme').hidden && !document.getElementById('btn-lang').hidden`), 'the command line and the light / language buttons appear once the script runs');
+  check(await noSideways(), 'no sideways scrolling at 1440px');
+  await shot('02-hero');
 
-  console.log('typing and keyboard');
+  console.log('flashlight');
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 900, y: 300 });
+  await sleep(900);
+  await shot('03-flashlight', 0);
+  check(await ev(`!!document.querySelector('.hero .dev-canvas')`), 'the hero keeps its canvas for the flashlight');
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 10, y: 890 });
+
+  console.log('photos develop when they come into view');
+  await scrollTo('photos');
+  await until(() => ev(`!!document.querySelector('#photos .dev-canvas')`), 4000, 'dissolve started');
+  check(true, 'photos dissolve out of letters when seen');
+  await until(() => ev(`!document.querySelector('#photos .ph-a .dev-canvas')`), 6000, 'dissolve finished');
+  check(await ev(`document.querySelector('.links a[data-sec="photos"]').getAttribute('aria-current') === 'true'`), 'the nav light moves to the section on screen');
+  check((await ev(`document.getElementById('cmdline-text').textContent`)).length > 0, 'the command line names a command for this section');
+  await shot('04-photos');
+
+  console.log('viewer');
+  await ev(`document.querySelector('#photos .ph-a a').click()`);
+  await until(() => ev(`!!document.querySelector('dialog.viewer[open]')`), 3000, 'viewer');
+  check((await ev(`document.querySelector('dialog.viewer .exif')?.textContent ?? ''`)).includes('NIKON Z 6'), 'a photo opens the viewer with its full shooting details');
+  await shot('05-viewer');
+  await key('Escape', 'Escape', 27);
+  await until(() => ev(`!document.querySelector('dialog.viewer[open]')`), 2000, 'viewer closed');
+
+  console.log('the rest of the page');
+  for (const id of ['lab', 'work', 'about']) { await scrollTo(id); await sleep(700); await shot(`06-${id}`); }
+  check(await ev(`!!document.querySelector('#lab .card .dev-canvas')`), 'the mirror card stays as letters');
+  check(await ev(`document.querySelectorAll('#work .idx a').length`) >= 7, 'the work index lists projects and documents');
+  check(await ev(`/@/.test(document.querySelector('[data-face]').textContent)`), 'the face in "about" is drawn');
+
+  // ---- the terminal ------------------------------------------------------------------
+  console.log('terminal drawer');
+  await ev(`window.scrollTo(0, 0)`);
+  await key('~', 'Backquote', 192, '~');
+  await until(termOpen, 2000, 'drawer open');
+  await bootDone();
+  check((await logText()).includes('[ ok ]'), 'the boot lines play the first time it opens');
+  check(await ev(`document.activeElement.id === 'cmd' || !matchMedia('(hover: hover) and (pointer: fine)').matches`), 'with a mouse, the prompt has focus', await ev(`JSON.stringify({ active: document.activeElement?.id || document.activeElement?.tagName, fine: matchMedia('(hover: hover) and (pointer: fine)').matches })`));
   await typeText('projects'); await enter();
   await until(async () => (await logText()).includes('handoff-semantics'), 3000, 'projects output');
-  check((await ev(`location.hash`)) === '#projects', 'URL hash updated to #projects');
+  await sleep(900);
+  check(await ev(`Math.abs(document.getElementById('work').getBoundingClientRect().top) < 120`), 'the page scrolls to the matching section behind the drawer');
   check((await ev(`document.getElementById('cmd').value`)) === '', 'input cleared after Enter');
   await typeText('ab'); await key('Tab', 'Tab', 9);
   check((await ev(`document.getElementById('cmd').value`)) === 'about ', 'Tab completes "ab" to "about "');
   await ev(`document.getElementById('cmd').value = ''`);
   await key('ArrowUp', 'ArrowUp', 38);
-  check((await ev(`document.getElementById('cmd').value`)) === 'projects', 'ArrowUp recalls previous command');
+  check((await ev(`document.getElementById('cmd').value`)) === 'projects', 'ArrowUp recalls the previous command');
   await ev(`document.getElementById('cmd').value = ''`);
-
-  console.log('clickable commands');
   await ev(`document.querySelector('#log button.cmd[data-cmd="project 1"]').click()`);
   await until(async () => (await logText()).includes('outbox'), 3000, 'project 1 detail');
-  check(true, 'clicking a command button runs it');
-  await shot('03-project-detail');
+  check(true, 'clicking a command in the output runs it');
+  await typeText('view 6'); await enter();
+  await until(() => ev(`!!document.querySelector('#log figure.shot')`), 3000, 'picture');
+  await shot('07-terminal', 1200);
+  await key('Escape', 'Escape', 27);
+  check(!(await termOpen()), 'Esc closes the drawer');
 
-  console.log('themes');
-  for (const theme of ['light', 'amber', 'matrix', 'dark']) {
-    await typeText(`theme ${theme}`); await enter();
-    await until(() => ev(`document.documentElement.dataset.theme === '${theme}'`), 2000, theme);
-    check(true, `theme ${theme} applied`);
-    await shot(`04-theme-${theme}`);
-  }
-  check((await ev(`(() => { try { return localStorage.getItem('theme'); } catch { return 'n/a'; } })()`)) === 'dark', 'theme persisted');
-  // Regression: the toolbar button must cycle through every theme in order (it used to always pick "light").
-  const seen = [];
-  for (let i = 0; i < 5; i++) {
-    await ev(`document.getElementById('btn-theme').click()`);
-    await sleep(900); // let the page wipe finish
-    seen.push(await ev(`document.documentElement.dataset.theme`));
-  }
-  check(JSON.stringify(seen) === JSON.stringify(['light', 'amber', 'matrix', 'dark', 'light']), 'theme button cycles dark > light > amber > matrix > dark', JSON.stringify(seen));
-  await typeText('theme dark'); await enter(); await sleep(900);
-  await typeText('theme'); await enter();
-  await until(async () => (await logText()).includes('theme: dark'), 3000, 'theme reports the current theme');
-  check(true, '`theme` with no argument reports the real current theme');
-
-  console.log('language');
-  await typeText('lang zh'); await enter();
-  await until(() => ev(`document.documentElement.lang === 'zh-Hant'`), 2000, 'lang');
-  check((await ev(`document.title`)).includes('後端'), 'document title localised');
-  await typeText('about'); await enter();
-  await until(async () => (await logText()).includes('我是軟體工程師'), 3000, 'zh about');
-  check(true, 'zh content rendered');
-  await shot('05-zh-about');
-  await typeText('lang en'); await enter();
-
-  console.log('misc commands');
-  await typeText('echo <b>x</b>'); await enter();
-  check(!(await ev(`!!document.querySelector('#log b')`)), 'echo does not inject HTML');
-  await typeText('projcets'); await enter();
-  check((await logText()).includes('Did you mean projects?'), 'typo suggestion shown');
+  console.log('light and language');
+  await typeText('x'); // the prompt is hidden now: typing goes nowhere, and must not throw
   await ev(`document.getElementById('btn-theme').click()`);
-  check(true, 'theme toolbar button works');
-  await typeText('clear'); await enter();
-  await until(async () => (await ev(`document.querySelectorAll('#log .entry').length`)) === 0, 3000, 'clear');
-  check(true, 'clear empties the log');
-  // Regression: a command typed right after `clear` must not be wiped by the pending swap.
-  await typeText('about'); await enter(); await typeText('clear'); await enter();
-  await typeText('skills'); await enter(); await sleep(1200);
-  const kept = await logText();
-  check(kept.includes('What I fix') && !kept.includes('I am a software engineer'), 'a command right after clear survives the wipe');
-
-  console.log('ASCII transitions');
-  const overlays = () => ev(`document.querySelectorAll('#log .reveal-canvas').length`);
-  const wipeVisible = () => ev(`!document.getElementById('wipe').hidden`);
-  for (const effect of ['dissolve', 'scan', 'rain']) {
-    await typeText(`transition ${effect}`); await enter();
-    await until(async () => (await logText()).includes(`transition set to ${effect}`), 3000, `transition ${effect}`);
-    await sleep(900);
-    await typeText('skills'); await enter();
-    await until(async () => (await overlays()) >= 1, 1500, `${effect} overlay appears`);
-    check(true, `${effect}: overlay appears over the new output`);
-    await shot(`08-transition-${effect}`, 150); // mid-animation
-    check((await logText()).includes('What I fix'), `${effect}: real text is already in the DOM (screen readers, copy)`);
-    await until(async () => (await overlays()) === 0, 3000, `${effect} overlay removed`);
-    check(true, `${effect}: overlay removed when finished`);
-  }
-  await typeText('transition auto'); await enter(); await sleep(900);
-  // Page wipe: theme change happens while covered, and the cover goes away afterwards.
-  await typeText('theme amber'); await enter();
-  await until(wipeVisible, 1000, 'wipe canvas shown');
-  await shot('09-wipe-cover', 120);
-  await until(async () => (await ev(`document.documentElement.dataset.theme`)) === 'amber', 2000, 'theme swapped during wipe');
-  check(true, 'theme swaps during the page wipe');
-  await until(async () => !(await wipeVisible()), 3000, 'wipe canvas hidden');
-  check(true, 'wipe canvas hidden again afterwards');
-  await typeText('clear'); await enter();
-  await until(async () => (await ev(`document.querySelectorAll('#log .entry').length`)) === 0, 3000, 'clear after wipe');
-  check(true, 'clear works through the wipe');
-  await typeText('transition off'); await enter(); await sleep(300);
-  await typeText('about'); await enter(); await sleep(150);
-  check((await overlays()) === 0, 'transition off: no overlay is created');
-  await typeText('transition auto'); await enter();
-  // Reduced motion: nothing animates at all.
-  await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }, { name: 'prefers-reduced-motion', value: 'reduce' }] });
-  await load(BASE);
-  await bootDone();
-  await typeText('skills'); await enter(); await sleep(120);
-  check((await overlays()) === 0, 'prefers-reduced-motion: no transition overlay');
-  await typeText('theme light'); await enter(); await sleep(80);
-  check(!(await wipeVisible()) && (await ev(`document.documentElement.dataset.theme`)) === 'light', 'prefers-reduced-motion: theme changes instantly, no wipe');
-  await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }, { name: 'prefers-reduced-motion', value: 'no-preference' }] });
-  await ev(`localStorage.clear()`);
-
-  console.log('reticle cursor');
-  await load(BASE);
-  await bootDone();
-  const mouse = (type, x, y, extra = {}) => send('Input.dispatchMouseEvent', { type, x, y, button: 'none', ...extra });
-  check((await ev(`document.getElementById('reticle').dataset.mode`)) === 'minimal', 'the default reticle mode is the quiet one (no screen-wide hairlines)');
-  check((await ev(`getComputedStyle(document.querySelector('#reticle .rt-h')).display`)) === 'none', 'default: no full-screen crosshair lines');
-  check(await ev(`document.documentElement.classList.contains('rt-on')`), 'reticle is on by default for a fine pointer',
-    await ev(`JSON.stringify({ fine: matchMedia('(hover: hover) and (pointer: fine)').matches, hover: matchMedia('(hover: hover)').matches, pointer: matchMedia('(pointer: fine)').matches, stored: (() => { try { return localStorage.getItem('cursor'); } catch (e) { return String(e); } })(), cls: document.documentElement.className, reticle: !!document.getElementById('reticle'), mode: document.getElementById('reticle')?.dataset.mode })`));
-  check(!(await ev(`document.getElementById('reticle').classList.contains('rt-visible')`)), 'hidden until the pointer moves');
-  await mouse('mouseMoved', 500, 300);
-  await until(() => ev(`document.querySelector('#reticle .rt-xy')?.textContent === 'X 0500  Y 0300'`), 2000, 'coordinates shown');
-  check(true, 'label shows the live pointer coordinates');
-  check(await ev(`document.getElementById('reticle').classList.contains('rt-visible')`), 'reticle becomes visible');
-  await sleep(500);
-  const ringAt = await ev(`(() => { const m = new DOMMatrixReadOnly(getComputedStyle(document.querySelector('#reticle .rt-ring')).transform); return [Math.round(m.m41), Math.round(m.m42)]; })()`);
-  check(ringAt[0] === 500 && ringAt[1] === 300, 'the ring settles exactly on the pointer tip', JSON.stringify(ringAt));
-  check((await ev(`getComputedStyle(document.querySelector('#reticle .rt-tgt')).display`)) === 'none', 'the "SEEK" line is hidden unless something is locked');
-  check((await ev(`document.querySelector('#reticle .rt-ring').getBoundingClientRect().width`)) <= 22, 'the ring is small');
-  await shot('10-reticle-free', 50);
-  // At rest the coordinate label fades out (quieter), without being removed.
-  await sleep(2300);
-  check((await ev(`getComputedStyle(document.querySelector('#reticle .rt-label')).opacity`)) === '0', 'the coordinate label fades out when the pointer rests');
-  await mouse('mouseMoved', 520, 310);
-  await sleep(600);
-  check(Number(await ev(`getComputedStyle(document.querySelector('#reticle .rt-label')).opacity`)) > 0.9, 'and comes back as soon as it moves');
-  // Lock on to a dock item.
-  const chip = await ev(`(() => { const r = document.querySelector('.dock-item[data-cmd="projects"]').getBoundingClientRect(); return [Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2)]; })()`);
-  await mouse('mouseMoved', chip[0], chip[1]);
-  await until(() => ev(`document.getElementById('reticle').classList.contains('rt-lock')`), 2000, 'lock on chip');
-  check((await ev(`document.querySelector('#reticle .rt-tgt').textContent`)) === 'LOCK ▸ projects', 'locks on and names the target');
-  check((await ev(`getComputedStyle(document.querySelector('.dock-item')).cursor`)).includes('cursor-hot.svg'), 'hot cursor over clickable things');
-  await shot('11-reticle-lock', 450);
-  await sleep(1800); // a locked target keeps its label even while the pointer rests
-  check(Number(await ev(`getComputedStyle(document.querySelector('#reticle .rt-label')).opacity`)) > 0.9, 'a locked target keeps its label visible at rest');
-  // Retro click: a stepped burst of glyphs plus a pixel box.
-  await mouse('mousePressed', chip[0], chip[1], { button: 'left', clickCount: 1 });
-  await sleep(60);
-  check((await ev(`document.querySelectorAll('#reticle .rt-burst .rt-px').length`)) === 8 && (await ev(`document.querySelectorAll('#reticle .rt-burst .rt-box').length`)) === 1, 'click spawns 8 retro glyphs and one pixel box');
-  const glyphs = await ev(`[...document.querySelectorAll('#reticle .rt-px')].map((e) => e.textContent).join('')`);
-  check(glyphs.length === 8 && !/\w/.test(glyphs), 'the burst is made of retro symbols', glyphs);
-  const timing = await ev(`getComputedStyle(document.querySelector('#reticle .rt-px')).animationTimingFunction`);
-  check(/steps/.test(timing), 'the click animation is stepped (8-bit), not smooth', timing);
-  await shot('15-retro-click', 120);
-  await mouse('mouseReleased', chip[0], chip[1], { button: 'left', clickCount: 1 });
-  await until(async () => (await ev(`document.querySelectorAll('#reticle .rt-burst').length`)) === 0, 2500, 'burst removed');
-  check(true, 'the burst cleans itself up');
-  // The label never leaves the viewport.
-  await mouse('mouseMoved', 1270, 790);
-  await sleep(100);
-  const box = await ev(`(() => { const r = document.querySelector('#reticle .rt-label').getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom, innerWidth, innerHeight]; })()`);
-  check(box[0] >= 0 && box[1] >= 0 && box[2] <= box[4] && box[3] <= box[5], 'label stays inside the viewport at the corner', JSON.stringify(box));
-  // Text input keeps the native I-beam.
-  check((await ev(`getComputedStyle(document.getElementById('cmd')).cursor`)) === 'text', 'text input keeps the I-beam cursor');
-  // Switching modes through the command
-  await typeText('cursor full'); await enter();
-  await until(() => ev(`document.getElementById('reticle').dataset.mode === 'full'`), 2000, 'full');
-  check((await ev(`getComputedStyle(document.querySelector('#reticle .rt-h')).display`)) === 'block', '`cursor full` brings back the screen-wide crosshair');
-  await typeText('cursor off'); await enter();
-  await until(() => ev(`!document.documentElement.classList.contains('rt-on')`), 2000, 'off');
-  check((await ev(`getComputedStyle(document.getElementById('reticle')).display`)) === 'none', 'cursor off hides the reticle and restores the native cursor');
-  await typeText('cursor minimal'); await enter();
-  await until(() => ev(`document.documentElement.classList.contains('rt-on')`), 2000, 'minimal');
-  check((await ev(`localStorage.getItem('cursor')`)) === 'minimal', 'cursor mode is persisted');
-  // Touch devices never get the reticle.
-  await ev(`localStorage.clear()`);
-  await viewport(390, 844, true);
-  await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
-  await load('about:blank');
-  await load(BASE);
-  await bootDone();
-  check(await ev(`matchMedia('(hover: none) and (pointer: coarse)').matches`), 'touch emulation is active (test sanity)');
-  check(!(await ev(`document.documentElement.classList.contains('rt-on')`)), 'no custom cursor on touch devices');
-  check((await ev(`getComputedStyle(document.getElementById('reticle')).display`)) === 'none', 'reticle layer is not rendered on touch devices');
-  await send('Emulation.setTouchEmulationEnabled', { enabled: false });
-  await viewport(1280, 800);
-  await ev(`localStorage.clear()`);
-
-  console.log('split screen: overview pane + terminal');
-  await viewport(1440, 900);
-  await ev(`localStorage.clear()`);
-  await load('about:blank');
-  await load(BASE);
-  await bootDone();
-  const disp = (sel) => ev(`getComputedStyle(document.querySelector('${sel}')).display`);
-  check((await disp('#gui')) === 'flex' && (await disp('#tabs')) === 'none', 'at 1440px the overview pane is shown and the tabs are not');
-  check((await ev(`document.getElementById('hud-left').getAttribute('aria-hidden')`)) === 'true', 'decorative telemetry is hidden from screen readers');
-  check((await ev(`document.getElementById('gui').getAttribute('aria-label')`)).length > 2, 'the overview region is labelled');
-  const geometry = await ev(`(() => { const g = document.getElementById('gui').getBoundingClientRect(); const w = document.getElementById('window').getBoundingClientRect(); return { guiRight: g.right, winLeft: w.left, guiW: g.width, winW: w.width, guiH: g.height, winH: w.height, scroll: document.documentElement.scrollWidth - innerWidth }; })()`);
-  check(geometry.guiRight <= geometry.winLeft, 'the overview sits to the LEFT of the terminal, not overlapping it', JSON.stringify(geometry));
-  check(geometry.guiW > 340 && geometry.winW > 500, 'both panes have a usable width', JSON.stringify([geometry.guiW, geometry.winW]));
-  check(Math.abs(geometry.guiH - geometry.winH) <= 2, 'the two panes are the same height', JSON.stringify([geometry.guiH, geometry.winH]));
-  check(geometry.scroll <= 0, 'no horizontal overflow');
-  const counts = await ev(`({ projects: document.querySelectorAll('#gui [data-cmd^="project "]').length, works: document.querySelectorAll('#gui [data-cmd^="work "]').length, kinds: document.querySelectorAll('#gui .gkind').length, chips: document.querySelectorAll('#gui .gtools i').length, link: !!document.querySelector('#gui a.glink[rel="noopener noreferrer"]') })`);
-  check(counts.projects === 4 && counts.works === 6 && counts.kinds === 6 && counts.chips >= 4 && counts.link, 'cards for 4 projects and 6 works, skills and a safe contact link', JSON.stringify(counts));
-  await shot('12-split-screen', 700);
-
-  // Cards drive the terminal, and the terminal lights up the card.
-  await ev(`document.querySelector('#gui [data-cmd="project 2"]').click()`);
-  await until(async () => (await logText()).includes('vox-proof'), 3000, 'card runs project 2');
-  check((await ev(`document.querySelector('#gui [data-key="project 2"]').getAttribute('aria-current')`)) === 'true', 'clicking a card runs its command in the terminal and marks the card current');
-  await typeText('work 3'); await enter();
-  await until(async () => (await logText()).includes('permission'), 3000, 'typed work 3');
-  check((await ev(`document.querySelector('#gui [data-key="work 3"]').getAttribute('aria-current')`)) === 'true' && (await ev(`document.querySelectorAll('#gui [aria-current]').length`)) === 1, 'typing a command in the terminal highlights the matching card (and only one)');
-  await typeText('project black-hole'); await enter();
-  await typeText('project echlub'); await enter();
-  await sleep(150);
-  check((await ev(`document.querySelector('#gui [data-key="project 3"]')?.getAttribute('aria-current')`)) === 'true', 'slug commands resolve to their card too');
-  await typeText('skills'); await enter();
-  await sleep(150);
-  check((await ev(`document.querySelectorAll('#gui [aria-current]').length`)) === 0, 'a command with no card clears the highlight');
-  check(await ev(`(() => { const c = document.querySelector('#gui .gbtn'); c.focus(); return document.activeElement === c; })()`), 'cards are keyboard focusable');
-  await ev(`document.querySelector('#gui [data-cmd="work 1"]').click()`);
-  await until(async () => (await logText()).includes('physics equations'), 3000, 'work 1 card');
-  check(true, 'work cards run their command');
-
-  console.log('telemetry inside the overview');
-  const clock1 = await ev(`document.querySelector('[data-h="clock"]').textContent`);
-  const up1 = await ev(`document.querySelector('[data-h="up"]').textContent`);
-  await sleep(1300);
-  const clock2 = await ev(`document.querySelector('[data-h="clock"]').textContent`);
-  const up2 = await ev(`document.querySelector('[data-h="up"]').textContent`);
-  check(/^\d\d:\d\d:\d\d$/.test(clock2) && clock1 !== clock2, 'the clock ticks', `${clock1} -> ${clock2}`);
-  check(up1 !== up2, 'uptime advances', `${up1} -> ${up2}`);
-  check((await ev(`document.querySelector('[data-h="vp"]').textContent`)).startsWith('1440×900'), 'viewport readout is correct');
-  // NB: inside a template literal "\\d" must be doubled, or it silently becomes the letter "d".
-  await until(() => ev(`/^\\d+$/.test(document.querySelector('[data-h="fps"]').textContent)`), 4000, 'fps measured');
-  check(Number(await ev(`document.querySelector('[data-h="fps"]').textContent`)) > 0 && (await ev(`document.querySelector('[data-h="spark"]').getAttribute('points')`)).length > 0, 'frame rate is measured and the sparkline is drawn');
-  await mouse('mouseMoved', 700, 400);
-  await until(() => ev(`document.querySelector('[data-h="px"]').textContent === '0700'`), 2000, 'pointer x');
-  check((await ev(`document.querySelector('[data-h="py"]').textContent`)) === '0400', 'the pointer panel shows the live position');
-  check((await ev(`document.querySelector('#hud-right .recent-btn')?.dataset.cmd`)) === 'work 1', 'the recent list shows the newest command first');
-  await ev(`[...document.querySelectorAll('#hud-right .recent-btn')].find(b => b.dataset.cmd === 'project 2').click()`);
-  await sleep(150);
-  check((await ev(`[...document.querySelectorAll('#log .typed')].some(e => e.textContent === 'project 2') && location.hash`)) === '#projects/vox-proof', 'recent commands can be re-run with one click (the page for it is shown)');
-
-  console.log('language and theme reach the overview');
-  await typeText('lang zh'); await enter();
-  await until(() => ev(`document.documentElement.lang === 'zh-Hant'`), 3000, 'zh');
   await sleep(900);
-  check((await ev(`document.getElementById('gui').innerText`)).includes('黑洞光線渲染器') && (await ev(`document.getElementById('gui').getAttribute('aria-label')`)) === '概覽', 'the overview switches to Traditional Chinese');
-  check((await ev(`document.querySelector('#tabs [data-view="gui"]').textContent`)) === '概覽', 'tab labels follow the language');
-  await typeText('lang en'); await enter();
-  await sleep(900);
-  await typeText('theme matrix'); await enter();
-  await until(() => ev(`document.documentElement.dataset.theme === 'matrix'`), 3000, 'matrix');
-  await sleep(900);
-  check((await ev(`document.querySelector('[data-h="theme"]').textContent`)) === 'matrix', 'the telemetry shows the real theme');
-  check((await ev(`getComputedStyle(document.getElementById('window'), '::after').content`)) !== 'none', 'matrix theme draws CRT scanlines');
-  await shot('13-split-matrix', 300);
-  await typeText('theme dark'); await enter();
-  await sleep(900);
-
-  console.log('hide / show the overview');
-  await typeText('hud off'); await enter();
-  await until(async () => (await disp('#gui')) === 'none', 3000, 'hud off');
-  check((await ev(`Math.round(document.getElementById('window').getBoundingClientRect().width)`)) === 980, 'with the overview hidden the terminal returns to its normal width');
-  check((await ev(`localStorage.getItem('hud')`)) === 'off', 'the choice is persisted');
-  await typeText('gui on'); await enter();
-  await until(async () => (await disp('#gui')) === 'flex', 3000, 'gui on');
-  check(true, '`gui on` brings the overview back (alias of `hud`)');
-
-  console.log('narrow screens: tabs');
-  await viewport(820, 1000);
-  await sleep(300);
-  check((await disp('#tabs')) === 'flex' && (await disp('#gui')) === 'none' && (await disp('#window')) === 'flex', 'below 1000px the terminal is shown first, with Overview / Terminal tabs');
-  check((await ev(`document.querySelector('#tabs [data-view="term"]').getAttribute('aria-pressed')`)) === 'true', 'the terminal tab is marked pressed');
-  await ev(`document.querySelector('#tabs [data-view="gui"]').click()`);
-  await sleep(300);
-  check((await disp('#gui')) === 'flex' && (await disp('#window')) === 'none', 'the Overview tab shows the cards and hides the terminal');
-  check((await ev(`document.documentElement.scrollWidth - innerWidth`)) <= 0, 'no horizontal overflow on the Overview tab');
-  await until(() => ev(`document.querySelector('[data-h="clock"]').textContent !== '--:--:--'`), 3000, 'telemetry runs on the Overview tab');
-  check(true, 'the telemetry also runs on the Overview tab');
-  await ev(`document.querySelector('#gui [data-cmd="project 4"]').click()`);
-  await sleep(500);
-  check((await disp('#window')) === 'flex' && (await disp('#gui')) === 'none' && (await logText()).includes('echlub-demo'), 'on a narrow screen, tapping a card switches to the terminal and shows the result');
-
-  console.log('phone');
-  await viewport(390, 844, true);
-  await load('about:blank');
-  await load(BASE);
-  await bootDone();
-  check((await ev(`document.documentElement.scrollWidth - innerWidth`)) <= 0, 'phone: no horizontal overflow');
-  const tabBox = await ev(`[...document.querySelectorAll('#tabs .tab')].filter((b) => b.getClientRects().length > 0).map((b) => b.getBoundingClientRect().height)`); // visible tabs only (the ✉ one exists only when an email is set)
-  check(tabBox.every((h) => h >= 44), 'phone: tabs are touch-sized', JSON.stringify(tabBox));
-  await ev(`document.querySelector('#tabs [data-view="gui"]').click()`);
-  await sleep(500);
-  check((await ev(`document.documentElement.scrollWidth - innerWidth`)) <= 0, 'phone: no horizontal overflow on the Overview tab');
-  const tooSmall = await ev(`[...document.querySelectorAll('#gui .gbtn')].filter((b) => b.getBoundingClientRect().height < 44).length`);
-  check(tooSmall === 0, 'phone: every overview card is at least 44px tall', String(tooSmall));
-  await shot('20-overview-phone', 500);
-  await viewport(1280, 800);
-  await ev(`localStorage.clear()`);
-
-  console.log('ASCII 3D');
-  await viewport(1280, 800);
-  await load('about:blank');
-  await load(BASE);
-  await bootDone();
-  const modelText = (i = 0) => ev(`document.querySelectorAll('#log pre[data-ascii3d]')[${i}]?.textContent ?? ''`);
-  await typeText('3d'); await enter();
-  await until(async () => (await modelText()).length > 100, 4000, '3d model drawn');
-  const m1 = await modelText();
-  await sleep(450);
-  const m2 = await modelText();
-  check(m1 !== m2, 'the 3D model spins by itself');
-  check((await ev(`document.querySelector('#log pre[data-ascii3d]').getAttribute('role')`)) === 'img' && (await ev(`document.querySelector('#log pre[data-ascii3d]').getAttribute('aria-label')`)).length > 5, 'the model is exposed to screen readers as one labelled image');
-  check(m2.split('\n').length >= 20 && m2.split('\n').length <= 26, 'the model fits its grid', String(m2.split('\n').length));
-  const widest = await ev(`(() => { const pre = document.querySelector('#log pre[data-ascii3d]'); return [pre.scrollWidth, pre.clientWidth]; })()`);
-  check(widest[0] <= widest[1] + 1, 'the model fits the terminal width without scrolling', JSON.stringify(widest));
-  await mouse('mouseMoved', 1100, 120);
-  await sleep(500);
-  const m3 = await modelText();
-  check(m3 !== m2, 'the model keeps moving while the pointer steers it');
-  await shot('16-ascii3d-donut', 50);
-  // A newer model replaces the old one as the animated one; the old one freezes.
-  await typeText('cube'); await enter();
-  await until(async () => (await ev(`document.querySelectorAll('#log pre[data-ascii3d]').length`)) === 2, 3000, 'second model');
-  check((await ev(`document.querySelectorAll('#log pre[data-ascii3d]')[1].dataset.shape`)) === 'cube', 'the `cube` shortcut draws a cube');
-  const old1 = await modelText(0);
-  const new1 = await modelText(1);
-  await sleep(450);
-  check(old1 === (await modelText(0)), 'the previous model stops animating (only the newest runs)');
-  check(new1 !== (await modelText(1)), 'the newest model is the one that spins');
-  await shot('17-ascii3d-cube', 50);
-  await typeText('3d teapot'); await enter();
-  await until(async () => (await logText()).includes('unknown shape'), 3000, 'bad shape');
-  check(true, 'an unknown shape gives a clear error');
-  await typeText('clear'); await enter();
-  await until(async () => (await ev(`document.querySelectorAll('#log .entry').length`)) === 0, 3000, 'clear');
-  check(true, 'clear stops and removes the models');
-  // Reduced motion: one static frame, no animation.
-  await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }, { name: 'prefers-reduced-motion', value: 'reduce' }] });
-  await load('about:blank');
-  await load(BASE);
-  await bootDone();
-  await typeText('3d'); await enter();
-  await until(async () => (await modelText()).length > 100, 4000, 'static model');
-  const s1 = await modelText();
-  await sleep(600);
-  check(s1 === (await modelText()), 'prefers-reduced-motion: the model is a still picture');
-  await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }, { name: 'prefers-reduced-motion', value: 'no-preference' }] });
-  await ev(`localStorage.clear()`);
-
-  console.log('deep link');
-  await load(`${BASE}#skills`);
-  await bootDone();
-  check((await logText()).includes('What I fix'), '#skills deep link runs the command');
-
-  console.log('mobile');
-  await viewport(390, 844, true);
-  await ev(`localStorage.clear()`);
-  await load('about:blank'); // a hash-only change would not reload the page
-  await load(`${BASE}#projects`);
-  await bootDone();
-  const overflow = await ev(`document.documentElement.scrollWidth - innerWidth`);
-  check(overflow <= 0, 'no horizontal page overflow at 390px', `scrollWidth - innerWidth = ${overflow}`);
-  const smallTargets = await ev(`[...document.querySelectorAll('.chip,.tool')].filter(e => e.getClientRects().length > 0 && e.getBoundingClientRect().height < 36).length`); // visible ones only
-  check(smallTargets === 0, 'chips and toolbar buttons are touch-sized');
-  await shot('06-mobile-projects');
-
-  console.log('contrast (WCAG AA 4.5:1)');
-  await viewport(1280, 800);
-  const lum = (rgb) => { const [r, g, b] = rgb.map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
-  const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((m, n) => n - m); return (x + 0.05) / (y + 0.05); };
-  for (const theme of ['dark', 'light', 'amber', 'matrix']) {
-    await ev(`document.documentElement.dataset.theme = '${theme}'`);
-    const colors = await ev(`(() => { const s = getComputedStyle(document.documentElement); const probe = document.createElement('i'); document.body.append(probe); const get = (v) => { probe.style.color = s.getPropertyValue(v); return getComputedStyle(probe).color; }; const out = Object.fromEntries(['--panel','--bar','--fg','--dim','--accent','--accent2','--link','--err'].map(v => [v, get(v)])); probe.remove(); return out; })()`);
-    const rgb = (c) => c.match(/\d+(\.\d+)?/g).slice(0, 3).map(Number);
-    for (const fgVar of ['--fg', '--dim', '--accent', '--accent2', '--link', '--err']) {
-      for (const bgVar of ['--panel', '--bar']) {
-        const r = ratio(rgb(colors[fgVar]), rgb(colors[bgVar]));
-        check(r >= 4.5, `${theme}: ${fgVar} on ${bgVar} = ${r.toFixed(2)}`);
-      }
-    }
-  }
-
-  console.log('no JavaScript');
-  await send('Emulation.setScriptExecutionDisabled', { value: true });
-  await load(BASE);
-  const noJs = await ev(`({ text: document.getElementById('log').innerText, promptHidden: document.getElementById('prompt').hidden, chipsHidden: document.getElementById('chips').hidden, deadButtons: document.querySelectorAll('#log button').length })`);
-  check(noJs.text.includes('handoff-semantics') && noJs.text.includes('PostgreSQL'), 'content is readable without JS');
-  check(noJs.text.includes('Black hole renderer') && noJs.text.includes('Research and thinking'), 'the works are readable without JS too');
-  check(noJs.promptHidden && noJs.chipsHidden, 'inert prompt and chips stay hidden without JS');
-  check(noJs.deadButtons === 0, 'no dead buttons without JS');
-  await shot('07-no-js');
-  await send('Emulation.setScriptExecutionDisabled', { value: false });
-
-  console.log('pictures: ASCII first, then the real image');
-  await viewport(1440, 900);
-  await ev(`localStorage.clear()`);
-  await load('about:blank');
-  await load(BASE);
-  await bootDone();
-  const fig = (sel) => ev(`(() => { const e = document.querySelector('#log figure.shot ${sel}'); return e ? e.textContent : null; })()`);
-  await typeText('view 1'); await enter();
-  await until(() => ev(`!!document.querySelector('#log figure.shot')`), 3000, 'figure rendered');
-  const before = await ev(`(() => { const i = document.querySelector('#log .shot-img'); const r = i.getBoundingClientRect(); return { h: Math.round(r.height), w: Math.round(r.width), attrW: i.getAttribute('width'), attrH: i.getAttribute('height'), alt: i.alt }; })()`);
-  check(before.attrW === '1024' && before.attrH === '1024' && before.alt.length > 20 && before.h > 100, 'the image reserves its space (real width/height) and has alt text, so the page does not jump', JSON.stringify(before));
-  await until(() => ev(`(() => { const p = document.querySelector('#log .shot-ascii'); return !!p && !p.hidden && p.textContent.length > 200; })()`), 3000, 'ascii phase');
-  const ascii = await ev(`(() => { const p = document.querySelector('#log .shot-ascii'); const i = document.querySelector('#log .shot-img'); const pr = p.getBoundingClientRect(); const ir = i.getBoundingClientRect(); return { text: p.textContent, lines: p.textContent.split('\\n').length, imgVisibility: getComputedStyle(i).visibility, sameBox: Math.abs(pr.width - ir.width) <= 2 && Math.abs(pr.height - ir.height) <= 2, boxes: [Math.round(pr.left), Math.round(pr.top), Math.round(pr.width), Math.round(pr.height), Math.round(ir.left), Math.round(ir.top), Math.round(ir.width), Math.round(ir.height)], hiddenFromAT: p.getAttribute('aria-hidden') === 'true' }; })()`);
-  check(/^[ .:\-=+*#%@\n]+$/.test(ascii.text) && ascii.lines >= 20, 'the picture first appears drawn in characters (made from its own pixels)', `${ascii.lines} lines`);
-  check(ascii.imgVisibility === 'hidden' && ascii.sameBox, 'while the ASCII shows, the real image is hidden and the ASCII fills exactly its box', JSON.stringify({ v: ascii.imgVisibility, same: ascii.sameBox, boxes: ascii.boxes }));
-  check(ascii.hiddenFromAT, 'the ASCII version is hidden from screen readers (the image has the alt text)');
-  const alignment = await ev(`(() => { const p = document.querySelector('#log .shot-ascii'); const i = document.querySelector('#log .shot-img'); const cs = getComputedStyle(p); const lines = p.textContent.split('\\n'); const longest = lines.reduce((a, b) => (b.length > a.length ? b : a), ''); const m = document.createElement('span'); m.style.cssText = 'position:absolute;visibility:hidden;white-space:pre'; m.style.font = cs.font; m.textContent = longest; document.body.append(m); const textW = m.getBoundingClientRect().width; m.remove(); const box = i.getBoundingClientRect(); const rowH = parseFloat(cs.lineHeight); return { sameFont: cs.fontFamily === getComputedStyle(document.body).fontFamily, align: cs.textAlign, cols: longest.length, charW: box.width / longest.length, textW, boxW: box.width, rows: lines.length, rowsH: rowH * lines.length, boxH: box.height }; })()`);
-  check(alignment.sameFont && alignment.align === 'left', 'the picture in letters uses the terminal font and left alignment (not the button default)', JSON.stringify(alignment));
-  check(Math.abs(alignment.textW - alignment.boxW) / alignment.boxW < 0.015 && Math.abs(alignment.rowsH - alignment.boxH) / alignment.boxH < 0.015, 'its text spans the picture exactly, left to right and top to bottom (within 1.5%)', JSON.stringify(alignment));
-  check(alignment.cols >= 80 && alignment.cols <= 110 && alignment.charW >= 6 && alignment.charW <= 8.5, 'on a large picture it is denser than before, but each character is still ~7 px (clearly letters)', JSON.stringify({ cols: alignment.cols, charW: alignment.charW }));
-  await shot('21-image-ascii', 80);
-  await until(() => ev(`document.querySelector('#log .shot-ascii').hidden`), 5000, 'ascii phase ends');
-  await until(() => ev(`!!document.querySelector('#log .reveal-canvas')`), 1500, 'dissolve canvas appears');
-  const dis = await ev(`(() => { const c = document.querySelector('#log .reveal-canvas'); const i = document.querySelector('#log .shot-img'); const e = c.closest('.entry'); const cr = c.getBoundingClientRect(); const ir = i.getBoundingClientRect(); const er = e.getBoundingClientRect(); return { parent: c.parentElement.className, dx: Math.abs(cr.left - ir.left), dy: Math.abs(cr.top - ir.top), dw: Math.abs(cr.width - ir.width), dh: Math.abs(cr.height - ir.height), entryH: Math.round(er.height), canvasH: Math.round(cr.height) }; })()`);
-  check(dis.parent === 'shot-open' && dis.dx <= 1.5 && dis.dy <= 1.5 && dis.dw <= 1.5 && dis.dh <= 1.5 && dis.canvasH < dis.entryH, 'the dissolve covers exactly the picture (not the whole entry or the page)', JSON.stringify(dis));
-  await shot('21-image-dissolve', 0);
-  const after = await ev(`(() => { const i = document.querySelector('#log .shot-img'); return { visible: getComputedStyle(i).visibility === 'visible', loaded: i.complete && i.naturalWidth === 1024, h: Math.round(i.getBoundingClientRect().height) }; })()`);
-  check(after.visible && after.loaded, 'then it dissolves into the real image, fully loaded', JSON.stringify(after));
-  check(after.h === before.h, 'the layout did not shift between the ASCII and the real image', `${before.h} -> ${after.h}`);
-  await shot('22-image-real', 1300);
-
-  console.log('floating picture windows (wide screens with a mouse)');
-  await typeText('mode log'); await enter(); // these checks open several pictures from one scrolling log
-  const opener = `document.querySelector('#log .shot-open')`;
-  const wins = () => ev(`document.querySelectorAll('#windows .win').length`);
-  const winProp = (n, expr) => ev(`(() => { const w = document.querySelectorAll('#windows .win')[${n}]; return w ? (${expr}) : null; })()`);
-  const barCentre = (n) => winProp(n, `(() => { const r = w.querySelector('.wtitle').getBoundingClientRect(); return [Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2)]; })()`);
-  const dragBy = async (n, dx, dy) => {
-    const [x, y] = await barCentre(n);
-    await mouse('mouseMoved', x, y);
-    await mouse('mousePressed', x, y, { button: 'left', buttons: 1, clickCount: 1 });
-    for (let i = 1; i <= 6; i++) await mouse('mouseMoved', x + (dx * i) / 6, y + (dy * i) / 6, { button: 'left', buttons: 1 });
-    await mouse('mouseReleased', x + dx, y + dy, { button: 'left', buttons: 0, clickCount: 1 });
-  };
-  await ev(`${opener}.focus(); ${opener}.click()`);
-  await ev(`${opener}.click()`); // clicking the same picture again must not open a duplicate
-  await until(async () => (await wins()) >= 1, 3000, 'window opens');
-  await sleep(300);
-  check((await wins()) === 1, 'opening the same picture twice reuses its window instead of stacking a duplicate');
-  const w1 = await winProp(0, `({ role: w.getAttribute('role'), modal: w.getAttribute('aria-modal'), labelled: document.getElementById(w.getAttribute('aria-labelledby'))?.textContent, meta: w.querySelector('.wmeta').textContent, img: w.querySelector('.wstage img')?.getAttribute('src'), alt: w.querySelector('.wstage img')?.alt.length, cap: w.querySelector('.wcap').textContent, focused: document.activeElement === w, rect: (() => { const r = w.getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom]; })() })`);
-  check(!(await ev(`!!document.querySelector('dialog.viewer[open]')`)), 'on a wide screen the picture does NOT open the full-page modal');
-  check(w1.role === 'dialog' && w1.modal === 'false' && w1.labelled === 'black-hole-presentation.jpg', 'the window is a labelled, non-modal dialog titled with the file name', JSON.stringify(w1));
-  check(w1.meta === '1024×1024 · JPG' && w1.img.endsWith('black-hole-presentation.jpg') && w1.alt > 20 && w1.cap.includes('A black hole, prepared for viewing'), 'it shows the size, the image with alt text and the caption');
-  check(w1.focused, 'focus moves into the window');
-  check(w1.rect[0] >= 0 && w1.rect[1] >= 0 && w1.rect[2] <= 1440 && w1.rect[3] <= 900, 'it opens fully inside the screen');
-  await typeText('echo still usable'); await enter();
-  await until(async () => (await logText()).includes('still usable'), 3000, 'terminal works');
-  check(true, 'the terminal behind the window keeps working (the window is not modal)');
-  await shot('23-window-one', 500);
-
-  // A second and third window stack and cascade.
-  await typeText('view 2'); await enter();
-  await until(async () => (await ev(`document.querySelectorAll('#log figure.shot').length`)) >= 2, 3000, 'second figure');
-  await ev(`[...document.querySelectorAll('#log .shot-open')].at(-1).click()`);
-  await until(async () => (await wins()) === 2, 3000, 'second window');
-  const pos = await ev(`[...document.querySelectorAll('#windows .win')].map((w) => { const r = w.getBoundingClientRect(); return { l: Math.round(r.left), t: Math.round(r.top), z: Number(getComputedStyle(w).zIndex), front: w.classList.contains('is-front') }; })`);
-  check(pos[1].l > pos[0].l && pos[1].t > pos[0].t, 'a new window cascades down and to the right of the previous one', JSON.stringify(pos));
-  check(pos[1].z > pos[0].z && pos[1].front && !pos[0].front, 'the newest window is in front', JSON.stringify(pos));
-
-  // Click an older window: it comes to the front.
-  const [bx, by] = await barCentre(0);
-  await mouse('mouseMoved', bx, by);
-  await mouse('mousePressed', bx, by, { button: 'left', buttons: 1, clickCount: 1 });
-  await mouse('mouseReleased', bx, by, { button: 'left', buttons: 0, clickCount: 1 });
-  await sleep(150);
-  check((await winProp(0, `w.classList.contains('is-front')`)) && !(await winProp(1, `w.classList.contains('is-front')`)) && (await winProp(0, `Number(getComputedStyle(w).zIndex)`)) > (await winProp(1, `Number(getComputedStyle(w).zIndex)`)), 'clicking a window brings it to the front');
-
-  // Drag by the title bar.
-  const dragFrom = await winProp(0, `(() => { const r = w.getBoundingClientRect(); return [r.left, r.top]; })()`);
-  await dragBy(0, 120, 80);
-  const dragTo = await winProp(0, `(() => { const r = w.getBoundingClientRect(); return [r.left, r.top]; })()`);
-  check(Math.abs(dragTo[0] - dragFrom[0] - 120) <= 2 && Math.abs(dragTo[1] - dragFrom[1] - 80) <= 2, 'dragging the title bar moves the window with the pointer', JSON.stringify({ dragFrom, dragTo }));
-  await dragBy(0, 4000, 4000);
-  const edge = await winProp(0, `(() => { const r = w.getBoundingClientRect(); return [r.right, r.bottom]; })()`);
-  check(edge[0] <= 1440 && edge[1] <= 900 && edge[0] >= 1400, 'a window dragged far away is held inside the screen', JSON.stringify(edge));
-  await dragBy(0, -4000, -4000);
-  const corner = await winProp(0, `(() => { const r = w.getBoundingClientRect(); return [r.left, r.top]; })()`);
-  check(corner[0] >= 0 && corner[1] >= 0 && corner[0] <= 16 && corner[1] <= 16, 'and also at the top-left corner', JSON.stringify(corner));
-  check(!(await ev(`document.querySelector('#windows .win.is-dragging')`)), 'the dragging state is cleared when the button is released');
-
-  // Keyboard alternative to dragging: Alt + arrows.
-  await ev(`document.querySelectorAll('#windows .win')[1].focus()`);
-  const k0 = await winProp(1, `w.getBoundingClientRect().left`);
-  await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39, modifiers: 1 });
-  await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39, modifiers: 1 });
-  const k1 = await winProp(1, `w.getBoundingClientRect().left`);
-  check(Math.round(k1 - k0) === 24, 'Alt+→ moves the focused window by one step (a keyboard alternative to dragging)', `${k0} -> ${k1}`);
-
-  // ← / → switch pictures inside a window; the title (file name) follows.
-  const t0 = await winProp(1, `w.querySelector('.wtitle').textContent`);
-  await key('ArrowRight', 'ArrowRight', 39);
-  await until(async () => (await winProp(1, `w.querySelector('.wtitle').textContent`)) !== t0, 2000, 'next picture in window');
-  check(true, '→ switches the picture shown in the focused window');
-  await key('ArrowLeft', 'ArrowLeft', 37);
-  await until(async () => (await winProp(1, `w.querySelector('.wtitle').textContent`)) === t0, 2000, 'back');
-
-  // Esc closes the front window and focus goes back to what opened it.
-  await ev(`document.querySelectorAll('#windows .win')[1].focus()`);
-  await key('Escape', 'Escape', 27);
-  await until(async () => (await wins()) === 1, 2000, 'esc closes');
-  check(true, 'Esc closes the focused window');
-  check(await ev(`document.activeElement?.classList.contains('shot-open') || document.activeElement?.classList.contains('win')`), 'focus goes back to the picture that opened it (or the window beneath)');
-  await ev(`document.querySelector('#windows .wclose').click()`);
-  await until(async () => (await wins()) === 0, 2000, 'close button');
-  check(true, 'the ✕ button closes a window');
-
-  // All four pictures can be open together; each is its own window (the cap of six is covered by unit tests).
-  for (let i = 1; i <= 3; i++) { await typeText(`view ${i}`); await enter(); }
-  await until(async () => (await ev(`document.querySelectorAll('#log figure.shot').length`)) >= 4, 4000, 'figures');
-  await ev(`[...document.querySelectorAll('#log figure.shot')].slice(-4).forEach((f) => f.querySelector('.shot-open').click())`);
-  await sleep(400);
-  const many = await ev(`[...document.querySelectorAll('#windows .win')].map((w) => w.dataset.index).sort()`);
-  check(many.length >= 3 && many.length <= 4 && new Set(many).size === many.length, 'several pictures can be open at once, one window each', JSON.stringify(many));
-  await shot('23-windows-many', 600);
-  // (Esc is sent once per open window: a stray Esc with nothing to close makes headless Chrome abandon media loads.)
-  for (let n = await wins(); n > 0; n--) { await ev(`document.querySelector('#windows .win:last-child').focus()`); await key('Escape', 'Escape', 27); }
-  check((await wins()) === 0, 'Esc closes them all, one at a time');
-
-  // Video in a window: plays, and stops when closed.
-  await typeText('view 4'); await enter();
-  await until(async () => (await ev(`document.querySelectorAll('#log figure[data-kind="video"]').length`)) >= 1, 3000, 'video figure');
-  await ev(`document.querySelector('#log figure[data-kind="video"] .shot-open').click()`);
-  await until(async () => (await ev(`!!document.querySelector('#windows .win video')`)), 3000, 'video window');
-  const vid = await ev(`(() => { const v = document.querySelector('#windows .win video'); return { src: v.getAttribute('src'), controls: v.controls, muted: v.muted, label: v.getAttribute('aria-label')?.length, title: document.querySelector('#windows .win .wtitle').textContent, meta: document.querySelector('#windows .win .wmeta').textContent }; })()`);
-  check(vid.src.endsWith('black-hole-evolution.mp4') && vid.controls && vid.muted && vid.label > 20 && vid.title === 'black-hole-evolution.mp4' && vid.meta === '640×640 · MP4', 'a video opens in a window with controls, muted, a text description and its file name', JSON.stringify(vid));
-  await until(() => ev(`document.querySelector('#windows .win video').readyState >= 1`), 15000, 'video metadata');
-  check((await ev(`document.querySelector('#windows .win video').duration`)) > 20, 'the video loads');
-  await ev(`document.querySelector('#windows .win').focus()`);
-  await key('Escape', 'Escape', 27);
-  await until(async () => (await wins()) === 0, 2000, 'video window closed');
-  check(!(await ev(`!!document.querySelector('#windows video')`)), 'closing the window removes the video (no hidden playback)');
-
-  // Language reaches open windows.
-  await ev(`${opener}.click()`);
-  await until(async () => (await wins()) === 1, 3000, 'reopen');
-  await typeText('lang zh'); await enter();
-  await until(() => ev(`document.documentElement.lang === 'zh-Hant'`), 3000, 'zh');
-  await sleep(900);
-  check((await winProp(0, `w.querySelector('.wclose').getAttribute('aria-label')`)).startsWith('關閉') && (await winProp(0, `w.querySelector('.wcap').textContent`)).includes('黑洞'), 'an open window switches to Traditional Chinese with the page');
-  await typeText('lang en'); await enter();
-  await sleep(900);
-  await ev(`document.querySelector('#windows .win')?.focus()`);
-  await key('Escape', 'Escape', 27);
-
-  console.log('modal viewer (narrow screens keep the dialog)');
-  await viewport(820, 1000);
-  await load('about:blank');
-  await load(BASE);
-  await bootDone();
-  await typeText('view 1'); await enter();
-  await until(() => ev(`!!document.querySelector('#log figure.shot')`), 3000, 'figure (narrow)');
-  await sleep(1800);
-  await ev(`${opener}.focus(); ${opener}.click()`);
-  await until(() => ev(`!!document.querySelector('dialog.viewer[open]')`), 3000, 'narrow viewer opens');
-  check((await wins()) === 0, 'below 1000px pictures open in the modal dialog, not in a floating window');
-  const vw = await ev(`(() => { const d = document.querySelector('dialog.viewer'); return { title: d.querySelector('.vtitle').textContent, count: d.querySelector('.vcount').textContent, img: d.querySelector('.vstage img')?.getAttribute('src'), labelledby: d.getAttribute('aria-labelledby'), titleId: d.querySelector('.vtitle').id, modal: d.matches(':modal'), alt: d.querySelector('.vstage img')?.alt.length }; })()`);
-  check(vw.title === 'A black hole, prepared for viewing' && vw.count === '1 / 16' && vw.img.endsWith('black-hole-presentation.jpg') && vw.alt > 20, 'the dialog shows the title, counter, image and alt text', JSON.stringify(vw));
-  check(vw.labelledby === vw.titleId && vw.modal, 'and it is a labelled modal dialog');
-  await key('ArrowRight', 'ArrowRight', 39);
-  await until(() => ev(`document.querySelector('dialog.viewer .vcount').textContent === '2 / 16'`), 2000, 'next');
-  await key('ArrowLeft', 'ArrowLeft', 37);
-  await key('ArrowLeft', 'ArrowLeft', 37);
-  await until(() => ev(`document.querySelector('dialog.viewer .vcount').textContent === '16 / 16'`), 2000, 'wrap');
-  check(!!(await ev(`document.querySelector('dialog.viewer .vstage img')`)) && !(await ev(`document.querySelector('dialog.viewer .vstage video')`)), '← from the first wraps around to the last picture');
-  for (let i = 0; i < 4; i++) await key('ArrowRight', 'ArrowRight', 39);
-  await until(() => ev(`document.querySelector('dialog.viewer .vcount').textContent === '4 / 16'`), 2000, 'to the video');
-  check(!!(await ev(`document.querySelector('dialog.viewer .vstage video')`)), '→ from the last wraps to the first, and the fourth item is the video');
-  await until(() => ev(`document.querySelector('dialog.viewer video').readyState >= 1`), 30000, 'video metadata');
-  check((await ev(`document.querySelector('dialog.viewer video').duration`)) > 20, 'the video loads (the dev server answers Range requests, which Safari requires)');
-  await key('Escape', 'Escape', 27);
-  await until(() => ev(`!document.querySelector('dialog.viewer[open]')`), 2000, 'closed');
-  await until(() => ev(`document.activeElement === ${opener} && !document.querySelector('dialog.viewer video')`), 2000, 'cleanup after close').catch(() => {}); // the close event fires a tick after [open] clears
-  check(!(await ev(`!!document.querySelector('dialog.viewer video')`)) && (await ev(`document.activeElement === ${opener}`)), 'Esc closes it, removes the video, and focus returns to the picture', await ev(`JSON.stringify({ video: !!document.querySelector('dialog.viewer video'), active: document.activeElement?.className + '|' + document.activeElement?.tagName, openerConnected: !!${opener} })`));
-  await ev(`${opener}.click()`);
-  await until(() => ev(`!!document.querySelector('dialog.viewer[open]')`), 3000, 'reopen');
-  await ev(`document.querySelector('dialog.viewer').dispatchEvent(new MouseEvent('click', { bubbles: true }))`);
-  await until(() => ev(`!document.querySelector('dialog.viewer[open]')`), 2000, 'backdrop close');
-  check(true, 'clicking outside the dialog closes it');
-  // (From the test side: the page's own CSP, rightly, does not allow fetch().)
-  const rangeRes = await fetch(`${BASE}assets/gallery/black-hole-evolution.mp4`, { headers: { Range: 'bytes=0-99' } });
-  const rangeTest = { status: rangeRes.status, cr: rangeRes.headers.get('content-range'), type: rangeRes.headers.get('content-type'), ar: rangeRes.headers.get('accept-ranges') };
-  const badRange = await fetch(`${BASE}assets/gallery/black-hole-evolution.mp4`, { headers: { Range: 'bytes=99999999-' } });
-  check(badRange.status === 416, 'an impossible Range is answered with 416');
-  check(rangeTest.status === 206 && /^bytes 0-99\//.test(rangeTest.cr) && rangeTest.type === 'video/mp4' && rangeTest.ar === 'bytes', 'the server answers Range requests with 206 and the right headers', JSON.stringify(rangeTest));
-  await viewport(1440, 900);
-  await load('about:blank');
-  await load(BASE);
-  await bootDone();
-
-  console.log('typography: large display name');
-  const nameInfo = () => ev(`(() => { const n = document.querySelector('#gui .gname'); const cs = getComputedStyle(n); const r = n.getBoundingClientRect(); return { px: parseFloat(cs.fontSize), family: cs.fontFamily.slice(0, 40), weight: cs.fontWeight, w: Math.round(r.width), sw: n.scrollWidth, cw: n.clientWidth, doc: document.documentElement.scrollWidth, vw: innerWidth, lines: Math.round(r.height / parseFloat(cs.lineHeight)) }; })()`);
-  const big = await nameInfo();
-  check(big.px >= 56 && big.px <= 68.5, 'at 1440px the name is display-sized (56 to 68px)', JSON.stringify(big));
-  check(/sans|system-ui|Helvetica|Segoe/i.test(big.family) && !/mono/i.test(big.family) && Number(big.weight) >= 600, 'the name uses the sans display face, bold', JSON.stringify(big));
-  check(big.sw <= big.cw + 1 && big.doc <= big.vw, 'the big name does not overflow its card or the page');
-  check((await ev(`parseFloat(getComputedStyle(document.querySelector('#gui .grole')).fontSize)`)) > 15.5, 'the role line is a step above body text');
-  check((await ev(`parseFloat(getComputedStyle(document.getElementById('cmd')).fontSize)`)) >= 15, 'the terminal itself stays in monospace body size');
-  await ev(`document.querySelector('#gui').scrollTo(0, 0)`);
-  await shot('24-typography-1440', 400);
-  for (const [theme, label] of [['light', 'light'], ['amber', 'amber'], ['matrix', 'matrix'], ['dark', 'dark']]) {
-    await typeText(`theme ${theme}`); await enter(); await sleep(700);
-    const c = await ev(`(() => { const n = document.querySelector('#gui .gname'); return { color: getComputedStyle(n).color, bg: getComputedStyle(document.querySelector('#gui .gprofile')).backgroundColor }; })()`);
-    check(c.color !== c.bg, `the name is visible in the ${label} theme`, JSON.stringify(c));
-  }
-  await typeText('lang zh'); await enter(); await sleep(900);
-  const zhName = await nameInfo();
-  check(zhName.sw <= zhName.cw + 1 && zhName.doc <= zhName.vw && zhName.px === big.px, 'switching to Traditional Chinese keeps the layout and the name size');
-  await typeText('lang en'); await enter(); await sleep(900);
-  for (const [w, h, min, max] of [[1000, 800, 50, 68.5], [390, 800, 38, 44], [320, 640, 38, 44]]) {
-    await viewport(w, h, w < 500);
-    await load('about:blank'); await load(BASE); await bootDone();
-    if (w < 1000) await ev(`document.querySelector('.tab[data-view="gui"]')?.click()`);
-    await sleep(500);
-    const n = await nameInfo();
-    check(n.px >= min && n.px <= max && n.sw <= n.cw + 1 && n.doc <= n.vw && n.lines <= 2, `at ${w}px the name is ${n.px.toFixed(0)}px, fits, and does not scroll sideways`, JSON.stringify(n));
-    if (w === 390) await shot('24-typography-390', 300);
-  }
-  await viewport(1440, 900);
-  await load('about:blank'); await load(BASE); await bootDone();
-
-  console.log('status line: version and privacy claims');
-  const statusInfo = () => ev(`(() => { const s = document.getElementById('status'); const r = s.getBoundingClientRect(); const w = document.getElementById('window').getBoundingClientRect(); const c = document.getElementById('chips').getBoundingClientRect(); return { ver: s.querySelector('.status-ver').textContent, claims: s.querySelector('.status-claims').textContent, label: s.getAttribute('aria-label'), inside: r.left >= w.left - 1 && r.right <= w.right + 1 && r.bottom <= w.bottom + 1, belowChips: r.top >= c.bottom - 1, h: Math.round(r.height), doc: document.documentElement.scrollWidth, vw: innerWidth, vh: document.documentElement.scrollHeight, ih: innerHeight, size: parseFloat(getComputedStyle(s).fontSize), color: getComputedStyle(s).color }; })()`);
-  const st = await statusInfo();
-  check(st.ver === 'v1.0.0' && st.claims === '0 cookies · 0 trackers · 0 dependencies' && st.label === 'Site details', 'the status line shows the version and the three claims', JSON.stringify(st));
-  check(st.inside && st.belowChips && st.h < 50, 'it sits at the bottom of the terminal window, under the quick commands', JSON.stringify(st));
-  check(st.vh <= st.ih + 1 && st.doc <= st.vw, 'it does not make the page scroll');
-  await shot('25-status-line', 300);
-  await typeText('lang zh'); await enter(); await sleep(900);
-  const stZh = await statusInfo();
-  check(stZh.claims === '0 個 cookie · 0 個追蹤器 · 0 個依賴套件' && stZh.label === '網站資訊' && stZh.ver === 'v1.0.0', 'it follows the language', JSON.stringify(stZh));
-  await typeText('lang en'); await enter(); await sleep(900);
-  for (const theme of ['light', 'amber', 'matrix', 'dark']) {
-    await typeText(`theme ${theme}`); await enter(); await sleep(700);
-    const ratios = await ev(`(() => { const lum = (c) => { const m = c.match(/[\\d.]+/g).map(Number).slice(0, 3).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * m[0] + 0.7152 * m[1] + 0.0722 * m[2]; }; const s = document.getElementById('status'); const bg = getComputedStyle(s).backgroundColor; const out = {}; for (const sel of ['', '.status-ver']) { const fg = getComputedStyle(sel ? s.querySelector(sel) : s).color; const a = lum(fg), b = lum(bg); out[sel || 'text'] = ((Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)); } return out; })()`);
-    check(ratios.text >= 4.5 && ratios['.status-ver'] >= 4.5, `status line text has AA contrast in the ${theme} theme`, JSON.stringify(ratios));
-  }
-  await viewport(320, 640, true);
-  await load('about:blank'); await load(BASE); await bootDone();
-  await ev(`document.querySelector('.tab[data-view="term"]')?.click()`);
-  await sleep(400);
-  const stPhone = await statusInfo();
-  check(stPhone.inside && stPhone.doc <= stPhone.vw && stPhone.vh <= stPhone.ih + 1, 'at 320px wide it wraps, stays inside the window and does not scroll the page', JSON.stringify(stPhone));
-  await shot('25-status-line-320', 300);
-  await viewport(1440, 900);
-  await load('about:blank'); await load(BASE); await bootDone();
-
-  console.log('dock navigation (wide screens with a mouse)');
-  await viewport(1440, 900);
-  await load('about:blank'); await load(BASE); await bootDone();
-  const dockInfo = () => ev(`(() => { const d = document.getElementById('dock'); const r = d.getBoundingClientRect(); const w = document.getElementById('window').getBoundingClientRect(); const g = document.getElementById('gui').getBoundingClientRect(); return { shown: getComputedStyle(d).display !== 'none', items: [...d.querySelectorAll('.dock-item')].map((i) => [i.dataset.cmd, i.querySelector('.dock-lbl').textContent, i.getAttribute('aria-current')]), top: Math.round(r.top), bottom: Math.round(r.bottom), left: Math.round(r.left), right: Math.round(r.right), winBottom: Math.round(w.bottom), guiBottom: Math.round(g.bottom), chips: getComputedStyle(document.getElementById('chips')).display, doc: document.documentElement.scrollWidth, vw: innerWidth, docH: document.documentElement.scrollHeight, ih: innerHeight, label: d.getAttribute('aria-label') }; })()`);
-  const dk = await dockInfo();
-  check(dk.shown && dk.items.length === 7 && dk.items.map((i) => i[0]).join() === 'about,projects,works,gallery,skills,contact,help', 'the dock shows seven commands, with their names as labels', JSON.stringify(dk.items));
-  check(dk.items.every((i) => i[0] === i[1]) && dk.label === 'Quick commands', 'each visible label is the command it runs');
-  check(dk.chips === 'none', 'the plain quick-command buttons are replaced by the dock on wide screens');
-  check(Math.abs((dk.left + dk.right) / 2 - 720) <= 1 && dk.bottom <= 900 && dk.bottom >= 880, 'it floats at the bottom centre of the screen', JSON.stringify(dk));
-  check(dk.winBottom <= dk.top && dk.guiBottom <= dk.top, 'it does not cover the terminal or the overview', JSON.stringify({ win: dk.winBottom, gui: dk.guiBottom, top: dk.top }));
-  check(dk.doc <= dk.vw && dk.docH <= dk.ih + 1, 'it does not make the page scroll');
-  const rects = await ev(`[...document.querySelectorAll('.dock-item')].map((i) => { const r = i.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.right), Math.round(r.width), Math.round(r.height)]; })`);
-  check(rects.every((r) => r[2] >= 44 && r[3] >= 44) && rects.every((r, i) => i === 0 || r[0] >= rects[i - 1][1]), 'icons are touch-sized and do not overlap at rest', JSON.stringify(rects));
-  // Click: runs the command, marks the section, URL hash follows.
-  const dockCentre = (cmd) => ev(`(() => { const r = document.querySelector('.dock-item[data-cmd="${cmd}"]').getBoundingClientRect(); return [Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2)]; })()`);
-  const [cx, cy] = await dockCentre('skills');
-  await mouse('mouseMoved', cx, cy);
-  await sleep(250);
-  const swell = await ev(`[...document.querySelectorAll('.dock-item')].map((i) => Number(i.getBoundingClientRect().height / 56).toFixed(2))`);
-  const iSk = 4;
-  check(Number(swell[iSk]) >= 1.25 && Number(swell[iSk - 1]) > 1.05 && Number(swell[iSk - 1]) < Number(swell[iSk]) && Number(swell[0]) <= 1.01, 'the icon under the mouse swells and its neighbours follow, far ones stay put', JSON.stringify(swell));
-  await shot('26-dock-hover', 100);
-  await mouse('mousePressed', cx, cy, { button: 'left', buttons: 1, clickCount: 1 });
-  await mouse('mouseReleased', cx, cy, { button: 'left', buttons: 0, clickCount: 1 });
-  await until(async () => (await logText()).includes('What I fix'), 3000, 'skills ran');
-  check((await ev(`location.hash`)) === '#skills' && (await dockInfo()).items.filter((i) => i[2] === 'true').map((i) => i[0]).join() === 'skills', 'clicking runs the command, updates the URL and marks the current section');
-  await mouse('mouseMoved', 700, 300);
-  await sleep(300);
-  const rest = await ev(`[...document.querySelectorAll('.dock-item')].map((i) => Number(i.getBoundingClientRect().height / 56).toFixed(2))`);
-  check(rest.every((v) => Number(v) <= 1.01), 'when the mouse leaves the dock the icons settle back', JSON.stringify(rest));
-  await typeText('work 2'); await enter(); await sleep(300);
-  check((await dockInfo()).items.filter((i) => i[2] === 'true').map((i) => i[0]).join() === 'works', 'typing a command updates the dock too (work 2 -> works)');
-  await typeText('theme light'); await enter(); await sleep(700);
-  check((await dockInfo()).items.filter((i) => i[2] === 'true').map((i) => i[0]).join() === 'works', 'commands that are not sections leave it alone');
-  await typeText('theme dark'); await enter(); await sleep(700);
-  // Keyboard: reachable with Tab, visible focus, Enter runs it.
-  await ev(`document.querySelector('.dock-item[data-cmd="contact"]').focus()`);
-  const kf = await ev(`(() => { const i = document.querySelector('.dock-item[data-cmd="contact"]'); const cs = getComputedStyle(i); return { focusVisible: i.matches(':focus-visible'), scale: i.getBoundingClientRect().height / 56, border: cs.borderTopColor }; })()`);
-  await sleep(200);
-  const kf2 = await ev(`document.querySelector('.dock-item[data-cmd="contact"]').getBoundingClientRect().height / 56`);
-  check(kf2 >= 1.15, 'a focused icon is enlarged too, for keyboard users', JSON.stringify({ kf, kf2 }));
-  await key('Enter', 'Enter', 13, '\r');
-  await until(async () => (await logText()).includes('github.com/qwertyboy0325'), 3000, 'contact via keyboard');
-  check(true, 'Enter on a focused dock icon runs the command');
-  // Contrast of the label and the icon on the dock background, in every theme.
-  for (const theme of ['dark', 'light', 'amber', 'matrix']) {
-    await typeText(`theme ${theme}`); await enter(); await sleep(700);
-    const cr = await ev(`(() => { const lum = (c) => { const m = c.match(/[\\d.]+/g).map(Number).slice(0, 3).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * m[0] + 0.7152 * m[1] + 0.0722 * m[2]; }; const bar = getComputedStyle(document.querySelector('.bar')).backgroundColor; const ratio = (el) => { const a = lum(getComputedStyle(el).color); const b = lum(bar); return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05); }; return { label: ratio(document.querySelector('.dock-lbl')), icon: ratio(document.querySelector('.dock-ico')) }; })()`);
-    check(cr.label >= 4.5 && cr.icon >= 4.5, `dock label and icon have AA contrast in the ${theme} theme`, JSON.stringify(cr));
-  }
-  await shot('26-dock', 300);
-  // Language: labels stay the command names, the group name is translated.
-  await typeText('lang zh'); await enter(); await sleep(900);
-  const dz = await dockInfo();
-  check(dz.label === '快速指令' && dz.items.every((i) => i[0] === i[1]), 'in Chinese the group is named in Chinese and the labels stay the commands');
-  await typeText('lang en'); await enter(); await sleep(900);
-  // The toast stays clear of the dock.
-  await ev(`document.querySelector('.gmail-top')?.click()`);
-  await sleep(500);
-  const toast = await ev(`(() => { const t = document.getElementById('toast').getBoundingClientRect(); const d = document.getElementById('dock').getBoundingClientRect(); return { toastBottom: Math.round(t.bottom), dockTop: Math.round(d.top) }; })()`);
-  check(toast.toastBottom <= toast.dockTop, 'the "copied" message appears above the dock, not on top of it', JSON.stringify(toast));
-  // Picture windows stay above the dock.
-  check((await ev(`Number(getComputedStyle(document.getElementById('dock')).zIndex) < 30`)), 'the dock sits below the floating picture windows');
-  // Narrow window / touch-like: no dock, the plain buttons come back.
-  await viewport(820, 1000);
-  await load('about:blank'); await load(BASE); await bootDone();
-  const nr = await dockInfo();
-  check(!nr.shown && nr.chips === 'flex', 'below 1000px the dock is gone and the quick-command buttons are back', JSON.stringify({ shown: nr.shown, chips: nr.chips }));
-  await viewport(390, 800, true);
-  await ev(`localStorage.clear()`);
-  await load('about:blank'); await load(BASE); await bootDone();
-  const ph = await dockInfo();
-  check(!ph.shown && ph.doc <= ph.vw, 'on a phone there is no dock and nothing scrolls sideways');
-  // Reduced motion: no swelling.
-  await viewport(1440, 900);
-  await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }, { name: 'prefers-reduced-motion', value: 'reduce' }] });
-  await load('about:blank'); await load(BASE); await bootDone();
-  const [rx, ry] = await dockCentre('works');
-  await mouse('mouseMoved', rx, ry);
-  await sleep(300);
-  const calm = await ev(`[...document.querySelectorAll('.dock-item')].map((i) => Number(i.getBoundingClientRect().height / 56).toFixed(2))`);
-  check(calm.every((v) => Number(v) <= 1.01), 'with reduced motion the dock does not swell', JSON.stringify(calm));
-  await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }, { name: 'prefers-reduced-motion', value: 'no-preference' }] });
-  await load('about:blank'); await load(BASE); await bootDone();
-
-  console.log('pictures in the overview');
-  await ev(`document.querySelector('#gui .ggallery').scrollIntoView()`);
-  await until(() => ev(`[...document.querySelectorAll('#gui .ggallery:not(.gphotos) .gthumb img')].every((i) => i.complete && i.naturalWidth > 0)`), 15000, 'thumbnails loaded');
-  const cards = await ev(`(() => [...document.querySelectorAll('#gui .ggallery:not(.gphotos) .gthumb')].map((c) => { const i = c.querySelector('img'); return { loaded: i.complete && i.naturalWidth > 0, alt: i.alt, w: i.getAttribute('width'), h: i.getAttribute('height'), play: !!c.querySelector('.shot-play'), title: c.querySelector('.gtitle').textContent.length }; }))()`);
-  check(cards.length === 4 && cards.every((c) => c.loaded && c.w === '480' && c.h === '480' && c.title > 5), 'four thumbnail cards, loaded, with reserved dimensions', JSON.stringify(cards));
-  check(cards.filter((c) => c.play).length === 1, 'only the video card has a play badge');
-  await ev(`document.querySelector('#gui [data-cmd="view 2"]').click()`);
-  await until(async () => (await ev(`document.querySelectorAll('#log figure.shot').length`)) >= 1, 3000, 'card runs view 2');
-  check((await ev(`document.querySelector('#gui [data-key="view 2"]').getAttribute('aria-current')`)) === 'true', 'clicking a thumbnail card shows the picture in the terminal and marks the card');
-
-  console.log('pictures: language, reduced motion, phone');
-  await typeText('lang zh'); await enter();
-  await until(() => ev(`document.documentElement.lang === 'zh-Hant'`), 3000, 'zh');
-  await sleep(900);
-  await typeText('view 1'); await enter();
-  await until(async () => (await ev(`[...document.querySelectorAll('#log figure.shot figcaption strong')].some((s) => s.textContent.includes('黑洞'))`)), 3000, 'zh figure');
-  await ev(`[...document.querySelectorAll('#log .shot-open')].at(-1).click()`);
-  await until(async () => (await ev(`document.querySelectorAll('#windows .win').length`)) >= 1, 3000, 'zh window');
-  check((await ev(`document.querySelector('#windows .win .wclose').getAttribute('aria-label')`)).startsWith('關閉') && (await ev(`document.querySelector('#windows .win .wcap').textContent`)).includes('黑洞'), 'the picture window follows the language');
-  await ev(`document.querySelector('#windows .win').focus()`);
-  await key('Escape', 'Escape', 27);
-  await typeText('lang en'); await enter();
-  await sleep(900);
-  await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }, { name: 'prefers-reduced-motion', value: 'reduce' }] });
-  await load('about:blank');
-  await load(BASE);
-  await bootDone();
-  await typeText('view 2'); await enter();
-  await until(() => ev(`!!document.querySelector('#log figure.shot')`), 3000, 'figure (reduced motion)');
-  await sleep(250);
-  const still = await ev(`(() => { const p = document.querySelector('#log .shot-ascii'); const i = document.querySelector('#log .shot-img'); return { asciiHidden: p.hidden, visible: getComputedStyle(i).visibility === 'visible' }; })()`);
-  check(still.asciiHidden && still.visible, 'prefers-reduced-motion: the real image shows at once, with no ASCII animation', JSON.stringify(still));
-  await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }, { name: 'prefers-reduced-motion', value: 'no-preference' }] });
-  await viewport(390, 844, true);
-  await load('about:blank');
-  await load(BASE);
-  await bootDone();
-  await typeText('view 3'); await enter();
-  await until(() => ev(`!!document.querySelector('#log figure.shot')`), 3000, 'figure (phone)');
-  await sleep(1800);
-  check((await ev(`document.documentElement.scrollWidth - innerWidth`)) <= 0, 'phone: the picture does not cause sideways scrolling');
-  await ev(`document.querySelector('#log .shot-open').click()`);
-  await until(() => ev(`!!document.querySelector('dialog.viewer[open]')`), 3000, 'phone viewer');
-  const phone = await ev(`(() => { const d = document.querySelector('dialog.viewer').getBoundingClientRect(); const b = ['.vclose', '.vprev', '.vnext'].map((s) => document.querySelector('dialog.viewer ' + s).getBoundingClientRect()); return { inside: d.left >= 0 && d.right <= innerWidth && d.top >= 0 && d.bottom <= innerHeight, tap: b.every((r) => r.width >= 44 && r.height >= 44) }; })()`);
-  check(phone.inside, 'phone: the viewer fits inside the screen');
-  check(phone.tap, 'phone: close / previous / next are at least 44px');
-  await shot('24-viewer-phone', 600);
-  await key('Escape', 'Escape', 27);
-  await viewport(1280, 800);
-  await ev(`localStorage.clear()`);
-
-  console.log('works');
-  await viewport(1280, 800);
-  await ev(`localStorage.clear()`);
-  await load('about:blank');
-  await load(BASE);
-  await bootDone();
-  await ev(`document.querySelector('.dock-item[data-cmd="works"]').click()`);
-  await until(async () => (await logText()).includes('Black hole renderer'), 3000, 'works list');
-  check((await ev(`location.hash`)) === '#works', 'the works dock item lists the works and updates the URL hash');
-  const listText = await logText();
-  check(listText.includes('Visual and 3D') && listText.includes('Research and thinking') && listText.includes('Design'), 'works are grouped by kind');
-  await ev(`document.querySelector('#log button[data-cmd="work 1"]').click()`);
-  await until(async () => (await logText()).includes('physics equations'), 3000, 'work 1 detail');
-  const detail = await logText();
-  check(detail.includes('for engineers:') && detail.includes('not claimed:'), 'a work shows a plain summary, what is not claimed, and a separate "for engineers" line');
-  check((await ev(`document.querySelector('#log a.lnk[href="https://github.com/qwertyboy0325/blackhole-rust"]')?.rel`)) === 'noopener noreferrer', 'the public repo link is safe (noopener noreferrer)');
-  await ev(`document.querySelector('#log button[data-cmd="work 3"]')?.click()`).catch(() => {});
-  await typeText('work 3'); await enter();
-  await until(async () => (await logText()).includes('ask permission') || (await logText()).includes('permission'), 3000, 'work 3');
-  check(!(await logText()).includes('127.0.0.1'), 'no local addresses or private details leak into the page');
-  check((await ev(`document.documentElement.scrollWidth - innerWidth`)) <= 0, 'no horizontal overflow');
-  await typeText('lang zh'); await enter();
-  await until(() => ev(`document.documentElement.lang === 'zh-Hant'`), 3000, 'zh');
-  await typeText('works'); await enter();
-  await until(async () => (await logText()).includes('黑洞光線渲染器'), 3000, 'zh works');
-  check((await logText()).includes('視覺與 3D'), 'works are available in Traditional Chinese');
-  await ev(`localStorage.clear()`);
-  await load('about:blank'); // a real page load (the same address would only be a no-op in the running page)
-  await load(`${BASE}#works`);
-  await bootDone();
-  check((await logText()).includes('Black hole renderer'), 'the #works deep link opens the list');
-  await viewport(390, 844, true);
-  await load('about:blank');
-  await load(`${BASE}#works`);
-  await bootDone();
-  check((await ev(`document.documentElement.scrollWidth - innerWidth`)) <= 0, 'works fit a phone screen without sideways scrolling');
-  await shot('18-works-mobile', 1400);
-  await viewport(1280, 800);
-  await ev(`localStorage.clear()`);
-
-  console.log('start-up watchdog (src/guard.js)');
-  await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }, { name: 'prefers-reduced-motion', value: 'no-preference' }] });
-  await load('about:blank');
-  await load(BASE);
-  await bootDone();
-  await sleep(3600); // longer than the watchdog's wait
-  check((await ev(`window.__siteReady === true`)) && !(await ev(`!!document.querySelector('.boot-fail')`)), 'a healthy page sets the ready flag and never shows the start-up notice');
-  const brokenSite = async (label, mutate, expected) => {
-    const dir = await mkdtemp(join(tmpdir(), 'site-broken-'));
-    const errorsBefore = consoleErrors.length; // this scenario fails on purpose; its errors are not test failures
-    let server;
-    try {
-      await cp(ROOT, dir, { recursive: true, filter: (src) => !/[\\/](\.git|node_modules|\.shots)([\\/]|$)/.test(src) });
-      await mutate(dir);
-      server = spawn(process.execPath, [join(ROOT, 'scripts/serve.mjs'), '5197'], { stdio: 'ignore', env: { ...process.env, SITE_ROOT: dir, LIVERELOAD: '0' } });
-      await until(() => fetch('http://127.0.0.1:5197/').then((r) => r.ok), 8000, 'broken-site server');
-      await load('about:blank');
-      await load('http://127.0.0.1:5197/');
-      await until(() => ev(`!!document.querySelector('.boot-fail')`), 8000, `${label}: notice appears`);
-      const info = await ev(`({ text: document.querySelector('.boot-fail').innerText, role: document.querySelector('.boot-fail').getAttribute('role'), promptHidden: document.getElementById('prompt').hidden, content: document.getElementById('log').innerText })`);
-      check(expected.test(info.text), `${label}: the notice names the real cause`, info.text.replace(/\s+/g, ' ').slice(0, 260));
-      check(info.role === 'alert' && info.text.includes('互動式終端機沒有'), `${label}: the notice is an accessible alert and bilingual`);
-      check(info.content.includes('handoff-semantics') && info.content.includes('Black hole renderer'), `${label}: the pre-rendered content is still readable`);
-      check(info.promptHidden, `${label}: no broken prompt is shown`);
-      if (label.startsWith('main.js throws')) await shot('19-startup-notice', 200);
-    } finally {
-      await load('about:blank').catch(() => {});
-      server?.kill();
-      await rm(dir, { recursive: true, force: true }).catch(() => {});
-      consoleErrors.splice(errorsBefore);
-    }
-  };
-  await brokenSite('main.js throws', async (dir) => { const f = join(dir, 'src/main.js'); await writeFile(f, `throw new Error('simulated start-up failure');\n${await readFile(f, 'utf8')}`); }, /simulated start-up failure/);
-  await brokenSite('a module file is missing', async (dir) => { await rm(join(dir, 'src/engine.js')); }, /failed to load|engine\.js|main\.js/);
-  await brokenSite('main.js is blocked by CSP rules', async (dir) => { const f = join(dir, 'src/main.js'); await writeFile(f, `eval('1');\n${await readFile(f, 'utf8')}`); }, /Content-Security-Policy|unsafe-eval|EvalError|eval/i);
-
-  console.log('contact: the real site shows the published address');
-  const realEmail = (await readFile(join(ROOT, 'src/content.js'), 'utf8')).match(/email: '([^']+)'/)?.[1];
-  check(!!realEmail, 'src/content.js publishes an email address', String(realEmail));
-  await viewport(1440, 900);
-  await load(BASE);
-  await ev(`localStorage.clear()`);
-  await load('about:blank');
-  await load(BASE);
-  await bootDone();
-  check((await ev(`!document.getElementById('btn-mail').hidden && document.getElementById('btn-mail').dataset.copy`)) === realEmail, 'the title-bar ✉ button carries the published address');
-  check((await ev(`document.querySelectorAll('#gui .gmail[data-copy]').length`)) === 2 && (await ev(`document.querySelector('#gui .gmail').dataset.copy`)) === realEmail, 'the overview offers it twice (profile card and contact section)');
-  await typeText('contact'); await enter();
-  await until(async () => (await ev(`!!document.querySelector('#log a[href^="mailto:"]')`)), 3000, 'mailto link');
-  check((await ev(`document.querySelector('#log a[href^="mailto:"]').getAttribute('href')`)) === `mailto:${realEmail}`, 'the contact command links to the published address');
-  check((await ev(`document.documentElement.outerHTML.includes('${realEmail}')`)), 'the address is in the page');
-
-  console.log('contact: with an email set (a temp copy using the fake address hello@example.com)');
-  {
-    const dir = await mkdtemp(join(tmpdir(), 'site-mail-'));
-    let server;
-    try {
-      await cp(ROOT, dir, { recursive: true, filter: (src) => !/[\\/](\.git|node_modules|\.shots)([\\/]|$)/.test(src) });
-      const f = join(dir, 'src/content.js');
-      const content = await readFile(f, 'utf8');
-      if (!/email: '[^']+',/.test(content)) throw new Error('profile.email line not found');
-      await writeFile(f, content.replace(/email: '[^']+',/, "email: 'hello@example.com',"));
-      server = spawn(process.execPath, [join(ROOT, 'scripts/serve.mjs'), '5194'], { stdio: 'ignore', env: { ...process.env, SITE_ROOT: dir, LIVERELOAD: '0' } });
-      await until(() => fetch('http://127.0.0.1:5194/').then((r) => r.ok), 8000, 'mail-site server');
-      await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }, { name: 'prefers-reduced-motion', value: 'no-preference' }] });
-      await viewport(1440, 900);
-      await load('about:blank');
-      await load('http://127.0.0.1:5194/');
-      await bootDone();
-      const vis = await ev(`(() => { const b = document.getElementById('btn-mail'); const r = b.getBoundingClientRect(); return { shown: !b.hidden && r.width > 0, data: b.dataset.copy, label: b.getAttribute('aria-label'), top: !!document.querySelector('#gui .gmail-top'), section: !!document.querySelector('#gui .gcontact .gmail'), tabHidden: getComputedStyle(document.getElementById('tabs')).display === 'none' }; })()`);
-      check(vis.shown && vis.data === 'hello@example.com' && vis.label.length > 5, 'the title bar has a labelled contact button', JSON.stringify(vis));
-      check(vis.top && vis.section, 'the overview has a copy button in the profile card and in the contact section');
-      // Record what the page tries to copy (a real click gives it the user activation the Clipboard API needs).
-      await ev(`window.__copied = []; navigator.clipboard.writeText = (t) => { window.__copied.push(t); return Promise.resolve(); };`);
-      const centre = async (sel) => ev(`(() => { const r = document.querySelector('${sel}').getBoundingClientRect(); return [Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2)]; })()`);
-      const click = async (sel) => { const [x, y] = await centre(sel); await mouse('mouseMoved', x, y); await mouse('mousePressed', x, y, { button: 'left', clickCount: 1 }); await mouse('mouseReleased', x, y, { button: 'left', clickCount: 1 }); };
-      await click('#btn-mail');
-      await until(() => ev(`window.__copied.length === 1`), 2000, 'copied');
-      check((await ev(`window.__copied[0]`)) === 'hello@example.com', 'clicking the ✉ button copies the address');
-      const toastState = await ev(`(() => { const t = document.getElementById('toast'); return { text: t.textContent, shown: t.classList.contains('show'), role: t.getAttribute('role'), opacity: getComputedStyle(t).opacity }; })()`);
-      check(toastState.text === 'Email address copied' && toastState.shown && toastState.role === 'status', 'a visible, announced "copied" message appears', JSON.stringify(toastState));
-      const shownAt = Date.now();
-      await until(() => ev(`!document.getElementById('toast').classList.contains('show')`), 6000, 'toast hides');
-      const visibleFor = Date.now() - shownAt;
-      check(visibleFor >= 1500, 'the message goes away by itself, after being readable for a couple of seconds', `${visibleFor}ms`);
-      await shot('25-contact-overview', 100);
-      // contact command + overview buttons
-      await typeText('contact'); await enter();
-      await until(async () => (await ev(`!!document.querySelector('#log a[href="mailto:hello@example.com"]')`)), 3000, 'mailto link');
-      check(true, 'the contact command shows a mailto link');
-      await click('#log button[data-copy]');
-      await until(() => ev(`window.__copied.length === 2`), 2000, 'copied from the log');
-      await ev(`document.querySelector('#gui .gmail-top').scrollIntoView()`);
-      await sleep(200);
-      await click('#gui .gmail-top');
-      await until(() => ev(`window.__copied.length === 3`), 2000, 'copied from the overview');
-      check((await ev(`window.__copied.every((x) => x === 'hello@example.com')`)), 'every copy button copies the same address');
-      // If copying is impossible the address is shown instead.
-      await ev(`navigator.clipboard.writeText = () => Promise.reject(new Error('denied')); document.execCommand = () => false;`);
-      await click('#btn-mail');
-      await until(async () => (await ev(`document.getElementById('toast').textContent`)).includes('hello@example.com'), 2000, 'failure toast');
-      check((await ev(`document.getElementById('toast').textContent`)).startsWith('Could not copy'), 'when copying fails the message shows the address so it can be copied by hand');
-      // Fallback path (no Clipboard API at all)
-      await ev(`navigator.clipboard.writeText = () => Promise.reject(new Error('denied')); window.__exec = []; document.execCommand = (c) => { window.__exec.push([c, document.activeElement?.value]); return true; };`);
-      await click('#btn-mail');
-      await until(() => ev(`window.__exec.length === 1`), 2000, 'execCommand fallback');
-      check((await ev(`window.__exec[0][0] === 'copy' && window.__exec[0][1] === 'hello@example.com'`)) && !(await ev(`!!document.querySelector('textarea.sr')`)), 'the fallback copies through a temporary field and removes it');
-      // language
-      await ev(`navigator.clipboard.writeText = (t) => { window.__copied.push(t); return Promise.resolve(); };`);
-      await typeText('lang zh'); await enter();
-      await until(() => ev(`document.documentElement.lang === 'zh-Hant'`), 3000, 'zh');
-      await sleep(900);
-      await click('#btn-mail');
-      await until(async () => (await ev(`document.getElementById('toast').textContent`)) === '已複製 email 位址', 2000, 'zh toast');
-      check(true, 'the message follows the language');
-      await typeText('lang en'); await enter();
-      await sleep(900);
-      // narrow screens: the tab bar carries the button too
-      await viewport(820, 1000);
-      await sleep(300);
-      const tabMail = await ev(`(() => { const b = document.getElementById('tab-mail'); const r = b.getBoundingClientRect(); return { w: r.width, h: r.height, shown: !b.hidden && getComputedStyle(document.getElementById('tabs')).display === 'flex' }; })()`);
-      check(tabMail.shown && tabMail.w >= 44 && tabMail.h >= 44, 'on narrow screens the tab bar has a touch-sized ✉ button', JSON.stringify(tabMail));
-      await ev(`document.querySelector('#tabs [data-view="gui"]').click()`);
-      await sleep(300);
-      const before = await ev(`window.__copied.length`);
-      await click('#tab-mail');
-      await until(async () => (await ev(`window.__copied.length`)) === before + 1, 2000, 'copied from the tab bar');
-      check(true, 'the tab-bar button works even while the terminal is hidden');
-    } finally {
-      await load('about:blank').catch(() => {});
-      server?.kill();
-      await rm(dir, { recursive: true, force: true }).catch(() => {});
-      await viewport(1280, 800);
-      await ev(`localStorage.clear()`).catch(() => {});
-    }
-  }
-
-  console.log('contact: email switched off (a temp copy with profile.email = null)');
-  {
-    const dir = await mkdtemp(join(tmpdir(), 'site-nomail-'));
-    let server;
-    try {
-      await cp(ROOT, dir, { recursive: true, filter: (src) => !/[\\/](\.git|node_modules|\.shots)([\\/]|$)/.test(src) });
-      const f = join(dir, 'src/content.js');
-      await writeFile(f, (await readFile(f, 'utf8')).replace(/email: '[^']+',/, 'email: null,'));
-      server = spawn(process.execPath, [join(ROOT, 'scripts/serve.mjs'), '5193'], { stdio: 'ignore', env: { ...process.env, SITE_ROOT: dir, LIVERELOAD: '0' } });
-      await until(() => fetch('http://127.0.0.1:5193/').then((r) => r.ok), 8000, 'no-mail server');
-      await viewport(1440, 900);
-      await load('about:blank');
-      await load('http://127.0.0.1:5193/');
-      await bootDone();
-      check((await ev(`document.getElementById('btn-mail').hidden && document.getElementById('tab-mail').hidden`)) && !(await ev(`!!document.querySelector('[data-copy], #gui .gmail')`)), 'with the address set to null no contact buttons exist anywhere');
-      await typeText('contact'); await enter();
-      await until(async () => (await logText()).includes('github'), 3000, 'contact output');
-      check(!/[\w.+-]+@[\w-]+\.[\w.-]+/.test(await logText()) && !(await ev(`!!document.querySelector('#log a[href^="mailto:"]')`)), 'and the contact command shows no address (the "ezra@site" prompt is not one)');
-    } finally {
-      await load('about:blank').catch(() => {});
-      server?.kill();
-      await rm(dir, { recursive: true, force: true }).catch(() => {});
-    }
-  }
-
-  console.log('live reload (dev server, on a temp copy of the site)');
-  const lrDir = await mkdtemp(join(tmpdir(), 'site-lr-'));
-  const lrPort = 5198;
-  let lrServer;
-  try {
-    await cp(ROOT, lrDir, { recursive: true, filter: (src) => !/[\\/](\.git|node_modules|\.shots)([\\/]|$)/.test(src) });
-    lrServer = spawn(process.execPath, [join(ROOT, 'scripts/serve.mjs'), String(lrPort)], { stdio: 'ignore', env: { ...process.env, SITE_ROOT: lrDir } });
-    await until(() => fetch(`http://127.0.0.1:${lrPort}/`).then((r) => r.ok), 8000, 'dev server');
-    await sleep(600); // macOS replays the copy's file events right after the watcher starts
-    const plain = await (await fetch(BASE)).text();
-    check(!plain.includes('__livereload') && !plain.includes('connect-src'), 'the deployed page (live reload off) has no reload client and keeps the strict CSP');
-    await load('about:blank');
-    await load(`http://127.0.0.1:${lrPort}/`);
-    await bootDone();
-    await until(() => ev(`window.__livereload === 'connected'`), 5000, 'reload client connected');
-    check(true, 'the reload client connects (relaxed CSP allows only its own event stream)');
-    await ev(`window.__marker = 42`);
-    // CSS edit: styles swap in place and the page keeps its state.
-    const cssFile = join(lrDir, 'src/styles.css');
-    await writeFile(cssFile, (await readFile(cssFile, 'utf8')).replace('--accent: #5eead4;', '--accent: #ff00aa;'));
-    await until(() => ev(`getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() === '#ff00aa'`), 5000, 'css hot swap');
-    check((await ev(`window.__marker`)) === 42, 'a CSS edit updates the page without reloading it (state kept)');
-    await shot('14-live-css-edit', 300);
-    // JS edit: full reload.
-    const jsFile = join(lrDir, 'src/engine.js');
-    await writeFile(jsFile, `${await readFile(jsFile, 'utf8')}\n// touched by e2e\n`);
-    await until(() => ev(`window.__marker === undefined && document.readyState === 'complete'`), 6000, 'js reload');
-    await bootDone();
-    check(true, 'a JS edit reloads the page');
-    check((await ev(`getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()`)) === '#ff00aa', 'the reloaded page serves the edited stylesheet');
-    // HTML edit: full reload.
-    await ev(`window.__marker = 7`);
-    const htmlFile = join(lrDir, 'index.html');
-    await writeFile(htmlFile, (await readFile(htmlFile, 'utf8')).replace('<meta name="author" content="Ezra Wu">', '<meta name="author" content="Live Reload Test">'));
-    await until(() => ev(`document.querySelector('meta[name="author"]')?.content === 'Live Reload Test'`), 6000, 'html reload');
-    check((await ev(`window.__marker`)) === undefined, 'an HTML edit reloads the page');
-  } finally {
-    await load('about:blank').catch(() => {}); // leave first: killing a server under an open event stream logs a (harmless) network error
-    lrServer?.kill();
-    await rm(lrDir, { recursive: true, force: true }).catch(() => {});
-  }
-
-  console.log('reader pane: one page at a time, location bar, an address for every page');
-  await viewport(1440, 900);
-  await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }, { name: 'prefers-reduced-motion', value: 'no-preference' }] });
-  await load('about:blank'); await load(BASE); await bootDone();
-  await ev(`localStorage.clear()`);
-  await load('about:blank'); await load(BASE); await bootDone();
-  const rp0 = () => ev(`(() => { const t = (s) => document.querySelector(s); return { entries: document.querySelectorAll('#log > .entry').length, crumbs: [...document.querySelectorAll('#crumb-path li')].map((li) => li.textContent).join(' / '), current: t('#crumb-path li[aria-current="page"]')?.textContent, buttons: [...document.querySelectorAll('#crumb-path button')].map((b) => b.dataset.cmd).join(), back: !t('#crumb-back').disabled, fwd: !t('#crumb-fwd').disabled, hash: location.hash, title: document.title, h2: [...document.querySelectorAll('#log h2.h')].map((h) => h.textContent).join('|'), top: Math.round(document.getElementById('screen').scrollTop), label: t('#crumbs').getAttribute('aria-label'), shown: getComputedStyle(t('#crumbs')).visibility, len: history.length }; })()`);
-  const home = await rp0();
-  check(home.crumbs === '~' && !home.back && !home.fwd && home.shown === 'visible' && home.label === 'Location', 'the location bar starts at ~ with Back and Forward off', JSON.stringify(home));
-  await typeText('projects'); await enter();
-  await until(async () => (await rp0()).h2 === 'projects', 3000, 'projects page');
-  const pj = await rp0();
-  check(pj.entries === 1 && pj.crumbs === '~ / projects' && pj.hash === '#projects' && pj.back && !pj.fwd && pj.title.startsWith('Projects — Ezra Wu') && pj.top === 0, 'a page replaces the one before it, and the bar, address and tab title follow', JSON.stringify(pj));
-  check(pj.buttons === 'home' && pj.current === 'projects', 'the earlier parts of the path are buttons, the current page is marked');
-  // Open an entry from the overview card
-  await ev(`document.querySelector('#gui [data-cmd="project 2"]').click()`);
-  await until(async () => (await rp0()).h2 === 'vox-proof', 3000, 'project page');
-  const pr = await rp0();
-  check(pr.entries === 1 && pr.crumbs === '~ / projects / vox-proof' && pr.hash === '#projects/vox-proof' && pr.title.startsWith('vox-proof — Ezra Wu'), 'one entry has its own address and a three-part path', JSON.stringify(pr));
-  check(!(await logText()).includes('Making sure messages between systems'), 'the earlier page is really gone from the pane');
-  // The path is clickable
-  await ev(`document.querySelector('#crumb-path button[data-cmd="projects"]').click()`);
-  await until(async () => (await rp0()).hash === '#projects' && (await rp0()).h2 === 'projects', 3000, 'crumb to projects');
-  check(true, 'clicking a part of the path goes there');
-  const lenBefore = (await rp0()).len;
-  await ev(`document.querySelector('#crumb-path button[data-cmd="projects"]') || document.querySelector('#crumb-path li[aria-current] ')`);
-  await typeText('projects'); await enter(); await sleep(300);
-  check((await rp0()).len === lenBefore && (await rp0()).entries === 1, 'showing the same page again does not add another history entry');
-  // Back / Forward
-  await ev(`document.getElementById('crumb-back').click()`);
-  await until(async () => (await rp0()).hash === '#projects/vox-proof', 3000, 'back');
-  const bk = await rp0();
-  check(bk.h2 === 'vox-proof' && bk.entries === 1 && bk.fwd && bk.back, 'Back shows the page you came from; Forward is available', JSON.stringify(bk));
-  await ev(`history.back()`);
-  await until(async () => (await rp0()).hash === '#projects', 3000, 'browser back');
-  check((await rp0()).h2 === 'projects', "the browser's own Back button works too");
-  await ev(`document.getElementById('crumb-fwd').click()`);
-  await until(async () => (await rp0()).hash === '#projects/vox-proof', 3000, 'forward');
-  check(true, 'Forward goes to the next page');
-  for (let i = 0; i < 8 && !(await ev(`document.getElementById('crumb-back').disabled`)); i++) { await ev(`document.getElementById('crumb-back').click()`); await sleep(250); }
-  await until(async () => (await rp0()).hash === '', 3000, 'back to home');
-  const back0 = await rp0();
-  check(back0.crumbs === '~' && !back0.back && back0.fwd && back0.title === 'Ezra Wu — Backend / Platform Engineer', 'all the way back is the home page, with the plain title', JSON.stringify(back0));
-  check(!(await ev(`[...document.querySelectorAll('#hud-right .recent-btn')].some((b) => b.dataset.cmd === 'home')`)), 'moving through history does not fill the recent-commands list');
-  // Typing a new address by hand
-  await ev(`location.hash = '#works/black-hole'`);
-  await until(async () => (await rp0()).h2.includes('Black hole renderer'), 3000, 'hand-typed address');
-  const hand = await rp0();
-  check(hand.crumbs === '~ / works / black-hole' && hand.back && !hand.fwd, 'an address typed by hand shows that page', JSON.stringify(hand));
-  await ev(`location.hash = '#works/nope'`);
-  await sleep(300);
-  check((await rp0()).h2.includes('Black hole renderer') && (await rp0()).hash === '#works/black-hole', 'an address that names no page leaves the current page alone, and the address is put right');
-  // Actions are added under the page, they do not replace it
-  await typeText('theme light'); await enter(); await sleep(900);
-  const act = await rp0();
-  check(act.hash === '#works/black-hole' && act.crumbs === '~ / works / black-hole' && act.h2.includes('Black hole renderer') && act.entries === 2, 'a command like theme is added below the page and the page stays', JSON.stringify(act));
-  await typeText('theme dark'); await enter(); await sleep(900);
-  // Language: the page is shown again in the new language
-  await typeText('lang zh'); await enter();
-  await until(async () => (await rp0()).label === '位置', 3000, 'zh location bar');
-  await sleep(800);
-  const zh = await rp0();
-  check(zh.h2.includes('黑洞光線渲染器') && zh.title.startsWith('黑洞光線渲染器 — Ezra Wu') && zh.hash === '#works/black-hole', 'switching language shows the same page in the new language', JSON.stringify(zh));
-  check((await ev(`document.getElementById('crumb-back').getAttribute('aria-label')`)) === '上一頁', 'and the Back button is named in Chinese');
-  await typeText('lang en'); await enter(); await sleep(900);
-  // mode log
-  await typeText('mode log'); await enter(); await sleep(300);
-  await typeText('about'); await enter(); await sleep(300);
-  await typeText('skills'); await enter(); await sleep(300);
-  const lg = await rp0();
-  check(lg.h2.includes('about') && lg.h2.includes('skills') && lg.hash === '#skills' && lg.crumbs === '~ / skills', 'mode log keeps every output and scrolls, while the location bar still follows', JSON.stringify(lg));
-  await typeText('mode page'); await enter(); await sleep(300);
-  await typeText('contact'); await enter(); await sleep(300);
-  check((await rp0()).entries === 1 && (await rp0()).crumbs === '~ / contact', 'mode page goes back to one page at a time');
-  // clear
-  await typeText('clear'); await enter(); await sleep(900);
-  const cl = await rp0();
-  check(cl.entries === 0 && cl.crumbs === '~' && cl.title === 'Ezra Wu — Backend / Platform Engineer', 'clear empties the pane and the bar goes back to ~', JSON.stringify(cl));
-  await typeText('home'); await enter(); await sleep(400);
-  check((await rp0()).entries === 1 && (await ev(`!!document.querySelector('#log [data-ascii-face]')`)), 'home shows the welcome screen again');
-  await shot('29-reader-pane', 300);
-  // Deep links
-  await load('about:blank'); await load(`${BASE}#projects/echlub`); await bootDone();
-  const dl = await rp0();
-  check(dl.h2 === 'echlub' && dl.entries === 1 && dl.crumbs === '~ / projects / echlub' && !dl.back, 'opening an address shows that page directly (no boot screen first)', JSON.stringify(dl));
-  await load('about:blank'); await load(`${BASE}#projects/nope`); await bootDone();
-  check((await rp0()).crumbs === '~' && (await ev(`!!document.querySelector('#log [data-ascii-face]')`)), 'an address that names no page opens the welcome screen');
-  // Keyboard
-  await load('about:blank'); await load(BASE); await bootDone();
-  await typeText('about'); await enter(); await sleep(300);
-  await ev(`document.getElementById('crumb-back').focus()`);
-  check(await ev(`document.activeElement.id === 'crumb-back' && document.getElementById('crumb-back').matches(':focus-visible')`), 'the Back button can be focused with the keyboard');
-  // Touch sizes and phone
-  await viewport(390, 844, true);
-  await load('about:blank'); await load(BASE); await bootDone();
-  await ev(`document.querySelector('.tab[data-view="gui"]').click()`);
-  await sleep(300);
-  await ev(`document.querySelector('#gui [data-cmd="project 1"]').click()`);
-  await until(async () => (await rp0()).hash === '#projects/handoff-semantics', 3000, 'phone card');
-  const phoneBar = await ev(`(() => { const r = (s) => document.querySelector(s).getBoundingClientRect(); return { term: document.documentElement.dataset.view, bar: Math.round(r('#crumbs').width), back: [Math.round(r('#crumb-back').width), Math.round(r('#crumb-back').height)], doc: document.documentElement.scrollWidth - innerWidth, path: Math.round(r('#crumb-path').right) <= innerWidth }; })()`);
-  check(phoneBar.term === 'term' && phoneBar.doc <= 0 && phoneBar.back[0] >= 44 && phoneBar.back[1] >= 44 && phoneBar.path, 'on a phone a card opens its page in the terminal view; the location bar fits and its buttons are touch-sized', JSON.stringify(phoneBar));
-  await shot('29-reader-phone', 300);
-  await viewport(1440, 900);
-
-  console.log('camera mirror (a made-up camera: nothing real is filmed)');
-  await viewport(1440, 900);
-  await load('about:blank'); await load(BASE); await bootDone();
-  const mir = () => ev(`(() => { const f = document.querySelector('#log .mirror'); if (!f) return null; const q = (s) => f.querySelector(s); const st = document.querySelector('dialog.mirror-stage[open]'); const pre = st ? st.querySelector('.ms-ascii') : q('.mirror-ascii'); const v = f.querySelector('video'); return { phase: f.dataset.phase, state: f.dataset.state, startHidden: q('[data-mirror-start]').hidden, stopHidden: q('[data-mirror-stop]').hidden, copyHidden: q('[data-mirror-copy]').hidden, status: q('.mirror-status').textContent, text: pre.textContent, video: !!v && v.srcObject !== null, stage: !!st, dialogs: document.querySelectorAll('dialog.mirror-stage').length, count: document.querySelectorAll('#log .mirror').length }; })()`);
-  const stageGeo = () => ev(`(() => { const st = document.querySelector('dialog.mirror-stage[open]'); if (!st) return null; const pre = st.querySelector('.ms-ascii'); const view = st.querySelector('.ms-view'); const v = document.querySelector('#log .mirror video'); const d = st.getBoundingClientRect(); const p = pre.getBoundingClientRect(); const vr = view.getBoundingClientRect(); const cs = getComputedStyle(pre); const lines = pre.textContent.split('\\n'); const longest = lines.reduce((a, b) => (b.length > a.length ? b : a), ''); const m = document.createElement('span'); m.style.position = 'absolute'; m.style.visibility = 'hidden'; m.style.whiteSpace = 'pre'; m.style.font = cs.font; m.textContent = longest; document.body.append(m); const textW = m.getBoundingClientRect().width; m.remove(); const lineH = parseFloat(cs.lineHeight); return { linesH: lines.length * lineH, preH: p.height, dlg: [Math.round(d.width), Math.round(d.height)], vw: innerWidth, vh: innerHeight, pre: [Math.round(p.width), Math.round(p.height)], view: [Math.round(vr.width), Math.round(vr.height)], videoRatio: v.videoHeight / v.videoWidth, preRatio: p.height / p.width, textW, cols: longest.length, rows: lines.length, inside: p.left >= vr.left - 1 && p.right <= vr.right + 1 && p.top >= vr.top - 1 && p.bottom <= vr.bottom + 1, doc: document.documentElement.scrollWidth - innerWidth, align: cs.textAlign, mono: cs.fontFamily === getComputedStyle(document.body).fontFamily }; })()`);
-  const goLive = async (label) => {
-    await ev(`document.querySelector('#log [data-mirror-start]').click()`);
-    try { await until(async () => (await mir()).state === 'live' && (await mir()).stage, 8000, label); } catch (e) { throw new Error(`${label}: ${JSON.stringify({ ...(await mir()), text: 0 })}`); }
-  };
-  await typeText('mirror'); await enter();
-  await until(async () => !!(await mir()), 3000, 'mirror figure');
-  const cam0 = await mir();
-  check(cam0.state === 'ready' && !cam0.video && !cam0.stage && cam0.stopHidden && !cam0.startHidden, 'the mirror asks first: it explains itself and does not touch the camera (or open anything) until the button is pressed', JSON.stringify({ ...cam0, text: 0 }));
-  check((await ev(`document.querySelector('#log .mirror-intro').textContent`)).includes('Nothing is recorded, saved or sent anywhere'), 'the explanation says nothing is recorded, saved or sent');
-  await shot('30-mirror-ask', 400);
-  await ev(`document.querySelector('#log [data-mirror-start]').click()`);
-  await until(async () => (await mir()).state === 'live' && (await mir()).stage, 8000, 'camera live in the big view');
-  await sleep(900);
-  const cam1 = await mir();
-  check(cam1.video && cam1.stage && cam1.dialogs === 1 && cam1.status.includes('Camera on'), 'after pressing the button the camera runs and the big view opens', JSON.stringify({ ...cam1, text: cam1.text.length }));
-  const geo1 = await stageGeo();
-  check(geo1.dlg[0] >= geo1.vw * 0.95 && geo1.dlg[1] >= geo1.vh * 0.92, 'the big view fills nearly the whole window', JSON.stringify(geo1));
-  check(Math.abs(geo1.preRatio - geo1.videoRatio) / geo1.videoRatio < 0.01, 'the picture keeps the camera\'s own shape (no stretching)', JSON.stringify({ pre: geo1.pre, cam: geo1.videoRatio, got: geo1.preRatio }));
-  check(geo1.inside && (geo1.pre[0] >= geo1.view[0] - 20 || geo1.pre[1] >= geo1.view[1] - 20), 'and it is as large as the window allows, without being cut off', JSON.stringify({ pre: geo1.pre, view: geo1.view }));
-  check(Math.abs(geo1.textW - geo1.pre[0]) / geo1.pre[0] < 0.015 && geo1.align === 'left' && geo1.mono && geo1.doc <= 0, 'the letters span the picture exactly, in the terminal font, without scrolling the page', JSON.stringify({ textW: geo1.textW, pre: geo1.pre }));
-  check(Math.abs(geo1.linesH - geo1.preH) / geo1.preH < 0.02, 'the lines of letters fill the picture\'s height exactly (the face is not squashed to half height)', JSON.stringify({ lines: geo1.rows, lineH: geo1.linesH, boxH: geo1.preH }));
-  check(geo1.cols >= 150 && geo1.cols <= 200, 'the big view has room for more characters than the small box (100): about 7 px each', String(geo1.cols));
-  const camLines1 = cam1.text.split('\n');
-  check(camLines1.length >= 30 && /^[ .:\-=+*#%@\n]+$/.test(cam1.text), 'the frame is made of the usual characters', `${camLines1.length} lines`);
-  await until(() => ev(`!!document.querySelector('#log .mirror').dataset.perf`), 8000, 'frame timing available');
-  const perfInfo = JSON.parse((await ev(`document.querySelector('#log .mirror').dataset.perf ?? 'null'`)) ?? 'null');
-  check(perfInfo && perfInfo.read + perfInfo.text + perfInfo.dom < 30 && perfInfo.dom < 4 && perfInfo.interval <= 130, 'even this large, a frame costs only a few milliseconds and keeps (nearly) the full frame rate', JSON.stringify(perfInfo));
-  const cam2 = await mir();
-  await sleep(700);
-  check((await mir()).text !== cam2.text, 'it is live: the letters change from frame to frame');
-  await shot('30-mirror-live', 100);
-  // Resizing the window: the picture follows and keeps its shape
-  for (const [w, h] of [[1000, 600], [700, 900], [1900, 700]]) {
-    await viewport(w, h);
-    await sleep(600);
-    const g2 = await stageGeo();
-    check(g2.inside && Math.abs(g2.preRatio - g2.videoRatio) / g2.videoRatio < 0.012 && g2.dlg[0] >= w * 0.94 && g2.doc <= 0 && (g2.pre[0] >= g2.view[0] - 24 || g2.pre[1] >= g2.view[1] - 24), `resizing the window to ${w}x${h}: it refits and keeps its shape`, JSON.stringify({ pre: g2.pre, view: g2.view, ratio: [g2.preRatio, g2.videoRatio] }));
-  }
-  await viewport(1440, 900);
-  await sleep(500);
-  // Real full screen has room for finer letters. (The browser's full-screen state is simulated: headless Chrome cannot really switch.)
-  const dens = () => ev(`JSON.parse(document.querySelector('#log .mirror').dataset.perf ?? 'null')`);
-  await viewport(2560, 1440);
-  await sleep(800);
-  const windowed = await stageGeo();
-  await ev(`Object.defineProperty(document, 'fullscreenElement', { get: () => document.querySelector('dialog.mirror-stage'), configurable: true }); document.dispatchEvent(new Event('fullscreenchange'))`);
-  await sleep(1500);
-  const fs1 = await stageGeo();
-  check(fs1.cols > windowed.cols * 1.5 && fs1.cols >= 300 && fs1.cols <= 420 && fs1.pre[0] / fs1.cols >= 4.5 && fs1.pre[0] / fs1.cols <= 8, 'in full screen the letters are finer (about 5 to 7 px each, at most 420 across)', JSON.stringify({ windowed: windowed.cols, full: fs1.cols, px: fs1.pre[0] / fs1.cols }));
-  check(Math.abs(fs1.preRatio - fs1.videoRatio) / fs1.videoRatio < 0.01 && Math.abs(fs1.linesH - fs1.preH) / fs1.preH < 0.02 && Math.abs(fs1.textW - fs1.pre[0]) / fs1.pre[0] < 0.015, 'and the shape, the height and the width still match exactly', JSON.stringify({ ratio: [fs1.preRatio, fs1.videoRatio] }));
-  await until(async () => !!(await dens()), 8000, 'timing in full screen');
-  const d1 = await dens();
-  check(d1.full === true && d1.read + d1.text + d1.dom < 40 && d1.q >= 0.9, 'a normal computer keeps the full detail, with a frame costing only a few milliseconds', JSON.stringify(d1));
-  // Weigh resolution against speed: on a much slower processor the detail is lowered until it keeps up.
-  await send('Emulation.setCPUThrottlingRate', { rate: 6 });
-  await sleep(11000);
-  const d2 = await dens();
-  const slow = await stageGeo();
-  await send('Emulation.setCPUThrottlingRate', { rate: 1 });
-  check(d2.q < 0.9 && slow.cols < fs1.cols && slow.cols >= 100, 'on a 6x slower processor the detail is lowered (but stays fine) so the picture keeps moving', JSON.stringify({ q: d2.q, cols: [fs1.cols, slow.cols], gap: d2.gap }));
-  check(d2.gap < 160, 'and frames keep arriving (less than 160 ms apart even at that speed)', JSON.stringify(d2));
-  await ev(`delete document.fullscreenElement; document.dispatchEvent(new Event('fullscreenchange'))`);
-  await viewport(1440, 900);
-  await sleep(800);
-  // Copy one frame as text
-  await ev(`document.querySelector('dialog.mirror-stage .ms-copy').click()`);
-  await until(() => ev(`document.getElementById('toast').classList.contains('show')`), 3000, 'toast');
-  check((await ev(`document.getElementById('toast').textContent`)).length > 5, 'copying a frame tells you how it went');
-  check(await ev(`document.querySelector('dialog.mirror-stage .ms-full') !== null`), 'there is a full-screen button (hidden where the browser cannot do it)');
-  // Close = stop
-  await ev(`document.querySelector('dialog.mirror-stage .ms-close').click()`);
-  await sleep(400);
-  const cam3 = await mir();
-  check(cam3.state === 'off' && !cam3.video && !cam3.stage && cam3.dialogs === 0 && !cam3.startHidden && cam3.status === 'Camera off.', 'closing the big view releases the camera (no stream left) and offers to start again', JSON.stringify({ ...cam3, text: 0 }));
-  // Esc closes and stops
-  await goLive('live again');
-  await key('Escape', 'Escape', 27);
-  await until(async () => (await mir()).state === 'off', 3000, 'esc stops');
-  check((await mir()).dialogs === 0 && !(await mir()).video, 'Esc closes the big view and turns the camera off');
-  // `mirror off`
-  await goLive('live a third time');
-  await ev(`document.querySelector('dialog.mirror-stage .ms-close').blur?.()`);
-  await ev(`window.__runMirrorOff = true`);
-  await ev(`document.querySelector('dialog.mirror-stage').close(); void 0`);
-  await sleep(300);
-  check((await mir()).state === 'off' && !(await mir()).video, 'closing it by any route (here: the dialog itself) turns the camera off');
-  // Moving to another page lets go of the camera
-  await goLive('live a fourth time');
-  await ev(`document.querySelector('dialog.mirror-stage .ms-close').click()`);
-  await sleep(200);
-  await typeText('about'); await enter(); await sleep(600);
-  check((await mir()) === null && (await ev(`document.querySelectorAll('dialog.mirror-stage').length`)) === 0, 'opening another page removes the mirror (and with it the camera and the big view)');
-  // Leaving the page while it is on (history Back) also lets go
-  await typeText('mirror'); await enter();
-  await until(async () => !!(await mir()), 3000, 'mirror again');
-  await goLive('live before back');
-  await ev(`history.back()`);
+  check((await ev(`localStorage.getItem('theme')`)) === '5200k', 'the light button steps the colour temperature', await ev(`localStorage.getItem('theme')`));
+  check((await ev(`document.querySelector('[data-kelvin]').textContent`)).includes('5200K'), 'the footer says how the page is lit');
+  await ev(`document.getElementById('btn-lang').click()`);
   await sleep(1200);
-  check((await ev(`document.querySelectorAll('dialog.mirror-stage').length`)) === 0 && (await ev(`!document.querySelector('#log .mirror')`)), 'going Back while the camera is on closes the big view and releases the camera');
-  // Language: the wording follows
-  await typeText('lang zh'); await enter(); await sleep(900);
+  check((await ev(`document.documentElement.lang`)) === 'zh-Hant' && (await ev(`document.querySelector('.links').textContent`)).includes('照片'), 'the language button renders the page in Traditional Chinese');
+  check(!(await ev(`!!document.querySelector('.boot-fail')`)), 'no start-up failure notice');
+  await shot('08-zh');
+  await ev(`document.getElementById('btn-lang').click()`);
+  await sleep(1200);
+  await ev(`localStorage.setItem('theme', 'auto')`);
+
+  console.log('addresses');
+  await load(`${BASE}#works/black-hole`);
+  await until(termOpen, 4000, 'deep link opens the terminal');
+  await until(async () => (await logText()).includes('Black hole renderer'), 6000, 'deep link output');
+  check(true, 'an address the page has no part for opens the terminal on that page');
+  await load('about:blank'); // a new hash on the same page is not a new page load
+  await load(`${BASE}#about`);
+  await until(() => ev(`Math.abs(document.getElementById('about').getBoundingClientRect().top) < 120`), 5000, 'scrolled to #about').catch(() => {}); // the scroll is smooth
+  check(!(await termOpen()) && (await ev(`Math.abs(document.getElementById('about').getBoundingClientRect().top) < 120`)), 'an address of a page part just scrolls there', await ev(`JSON.stringify({ open: !document.getElementById('term').hidden, top: Math.round(document.getElementById('about').getBoundingClientRect().top), y: scrollY })`));
+
+  // ---- the mirror ----------------------------------------------------------------------
+  console.log('mirror on the page (a made-up camera: nothing real is filmed)');
+  await scrollTo('mirror');
+  await sleep(400);
+  const fig = `document.querySelector('#mirror [data-mirror]')`;
+  check((await ev(`${fig}.dataset.state`)) === 'ready' && !(await ev(`!!${fig}.querySelector('video').srcObject`)), 'the camera is not touched until the button is pressed');
+  await ev(`document.querySelector('#mirror [data-shutter]').click()`);
+  check((await ev(`document.querySelectorAll('#mirror .print').length`)) === 1, 'the shutter prints a frame before the camera is on (the face)');
+  await ev(`${fig}.querySelector('[data-mirror-start]').click()`);
+  await until(() => ev(`${fig}.dataset.state === 'live' && ${fig}.querySelector('.mirror-ascii').textContent.length > 200`), 10000, 'live');
+  check(!(await ev(`!!document.querySelector('dialog.mirror-stage[open]')`)), 'on the page the mirror stays in its light box (no big view)');
+  await ev(`document.querySelector('#mirror [data-shutter]').click()`);
+  const live = await ev(`${fig}.querySelector('.mirror-ascii').textContent.split('\\n')[0].length`);
+  check((await ev(`document.querySelector('#mirror .print pre').textContent.split('\\n')[0].length`)) > 0 && live > 30, 'the shutter prints the live frame', String(live));
+  await shot('09-mirror-live', 300);
+  await ev(`${fig}.querySelector('[data-mirror-stop]').click()`);
+  await until(() => ev(`!${fig}.querySelector('video').srcObject`), 3000, 'camera released');
+  check(true, 'Stop releases the camera');
+
+  console.log('mirror from the terminal: the big view');
+  await key('~', 'Backquote', 192, '~');
+  await until(termOpen, 2000, 'drawer');
+  await bootDone();
   await typeText('mirror'); await enter();
-  await until(async () => !!(await mir()), 3000, 'zh mirror');
-  check((await ev(`document.querySelector('#log .mirror-intro').textContent`)).includes('不會被錄影、儲存，也不會傳到任何地方') && (await ev(`document.querySelector('#log [data-mirror-start]').textContent`)) === '▶ 開啟相機', 'in Chinese the explanation and buttons are Chinese');
+  await until(() => ev(`!!document.querySelector('#log [data-mirror-start]')`), 3000, 'terminal mirror');
   await ev(`document.querySelector('#log [data-mirror-start]').click()`);
-  await until(async () => (await mir()).stage, 8000, 'zh big view');
-  check((await ev(`document.querySelector('dialog.mirror-stage .ms-close').getAttribute('aria-label')`)) === '關閉並關掉相機' && (await ev(`document.querySelector('dialog.mirror-stage .ms-copy').textContent`)) === '複製成文字', 'and so are the big view\'s buttons');
-  await ev(`document.querySelector('dialog.mirror-stage .ms-close').click()`);
-  await typeText('lang en'); await enter(); await sleep(900);
-  // Errors: blocked, no camera, in use
-  for (const [name, expectKey] of [['NotAllowedError', 'blocked'], ['NotFoundError', 'No camera was found'], ['NotReadableError', 'another app']]) {
-    await typeText('mirror'); await enter();
-    await until(async () => !!(await mir()), 3000, 'mirror for error');
-    await ev(`navigator.mediaDevices.getUserMedia = () => Promise.reject(Object.assign(new Error('x'), { name: '${name}' }))`);
-    await ev(`document.querySelector('#log [data-mirror-start]').click()`);
-    await until(async () => (await mir()).state === 'error', 3000, `error ${name}`);
-    const er = await mir();
-    check(er.status.includes(expectKey) && !er.startHidden && !er.stage, `${name}: a clear message, no big view, and the button is back`, er.status);
-  }
-  await shot('30-mirror-error', 300);
-  // Light theme and a phone (portrait)
-  await load('about:blank'); await load(BASE); await bootDone();
-  await typeText('theme light'); await enter(); await sleep(900);
-  await typeText('mirror'); await enter();
-  await until(async () => !!(await mir()), 3000, 'mirror light');
-  await goLive('live light');
-  await sleep(700);
-  const light = await mir();
-  check(light.text.length > 500 && /^[ .:\-=+*#%@\n]+$/.test(light.text), 'the light theme works too (the letters are inverted for dark-on-light)');
-  await shot('30-mirror-light', 100);
-  await ev(`document.querySelector('dialog.mirror-stage .ms-close').click()`);
-  await typeText('theme dark'); await enter(); await sleep(700);
+  await until(() => ev(`!!document.querySelector('dialog.mirror-stage[open]') && document.querySelector('dialog.mirror-stage .ms-ascii').textContent.length > 200`), 10000, 'big view');
+  check(true, 'the terminal mirror opens the big view');
+  await key('Escape', 'Escape', 27);
+  await until(() => ev(`!document.querySelector('dialog.mirror-stage[open]')`), 3000, 'big view closed');
+  check(await termOpen(), 'Esc closes the big view first, and leaves the drawer open');
+  await key('Escape', 'Escape', 27);
+
+  // ---- reduced motion ----------------------------------------------------------------------
+  console.log('reduced motion');
+  await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+  await load();
+  await sleep(600);
+  check(await ev(`!document.querySelector('.hero .pic').classList.contains('is-dev') && !document.querySelector('#photos .dev-canvas')`), 'with reduced motion the pictures are simply there');
+  await send('Emulation.setEmulatedMedia', { features: [] });
+
+  // ---- a phone -------------------------------------------------------------------------------
+  console.log('phone');
+  await setLanguage('zh-TW');
+  await ev(`localStorage.clear()`);
   await viewport(390, 844, true);
-  await load('about:blank'); await load(BASE); await bootDone();
-  await typeText('mirror'); await enter();
-  await until(async () => !!(await mir()), 3000, 'mirror phone');
-  await goLive('live phone');
-  await sleep(800);
-  const gp = await stageGeo();
-  const btnH = await ev(`[...document.querySelectorAll('dialog.mirror-stage .ms-btn')].filter((b) => !b.hidden).map((b) => Math.round(b.getBoundingClientRect().height))`);
-  check(gp.dlg[0] >= 370 && gp.inside && gp.doc <= 0 && Math.abs(gp.preRatio - gp.videoRatio) / gp.videoRatio < 0.015 && gp.pre[0] <= 390 && btnH.every((h) => h >= 44), 'on a phone the big view fits, keeps its shape, and its buttons are touch-sized', JSON.stringify({ ...gp, btnH }));
-  await shot('30-mirror-phone', 100);
-  await ev(`document.querySelector('dialog.mirror-stage .ms-close').click()`);
+  await load();
+  await sleep(1500);
+  check(await noSideways(), 'no sideways scrolling on a phone');
+  await shot('10-phone');
+  await ev(`document.getElementById('cmdline').click()`);
+  await until(termOpen, 2000, 'drawer on phone');
+  await bootDone();
+  await shot('11-phone-terminal', 800);
+  check(await noSideways(), 'the drawer fits a phone');
   await viewport(1440, 900);
-
-  console.log('contact sheets');
-  await load('about:blank'); await load(BASE); await bootDone();
-  await typeText('photos'); await enter();
-  await until(() => ev(`document.querySelectorAll('#log .sheet-item').length === 12`), 3000, 'sheet');
-  await until(() => ev(`[...document.querySelectorAll('#log .sheet-img')].every((i) => i.complete && i.naturalWidth > 0)`), 20000, 'sheet thumbnails');
-  const sh = await ev(`(() => { const items = [...document.querySelectorAll('#log .sheet-item')]; const cells = items.map((i) => { const b = i.querySelector('.sheet-open').getBoundingClientRect(); return [Math.round(b.width), Math.round(b.height)]; }); const pane = document.getElementById('screen').getBoundingClientRect(); const right = Math.max(...items.map((i) => i.getBoundingClientRect().right)); return { n: items.length, cells, firstRow: items.filter((i) => Math.abs(i.getBoundingClientRect().top - items[0].getBoundingClientRect().top) < 2).length, inside: right <= pane.right + 1, doc: document.documentElement.scrollWidth - innerWidth, play: document.querySelectorAll('#log .sheet .shot-play').length, bad: items.filter((i) => { const m = i.querySelector('img'); return m.getAttribute('width') !== String(m.naturalWidth) || m.getAttribute('height') !== String(m.naturalHeight); }).length }; })()`);
-  check(sh.n === 12 && sh.cells.every((c) => Math.abs(c[0] - sh.cells[0][0]) <= 1 && Math.abs(c[1] - sh.cells[0][1]) <= 1) && sh.firstRow >= 4 && sh.inside && sh.doc <= 0 && sh.bad === 0, 'photos is a grid of twelve equal thumbnails with exact declared sizes, inside the pane', JSON.stringify(sh));
-  await shot('29-contact-sheet', 1800);
-  // The thumbnail opens the viewer; the caption opens the page.
-  const hashBefore = await ev(`location.hash`);
-  await ev(`document.querySelector('#log .sheet-open[data-open="6"]').click()`);
-  await until(() => ev(`!!document.querySelector('#windows .win')`), 3000, 'sheet opens the viewer');
-  check((await ev(`location.hash`)) === hashBefore && (await ev(`document.querySelector('#windows .win .wtitle').textContent`)) === 'photo-looking-back.jpg', 'a thumbnail opens that picture in the viewer without leaving the page');
-  await ev(`document.querySelector('#windows .win').focus()`);
-  await key('Escape', 'Escape', 27);
-  await ev(`document.querySelector('#log .sheet-item [data-cmd="view 6"]').click()`);
-  await until(async () => (await ev(`location.hash`)) === '#photos/photo-looking-back', 3000, 'caption opens the page');
-  const photoPage = await ev(`(() => ({ crumbs: [...document.querySelectorAll('#crumb-path li')].map((l) => l.textContent).join(' / '), figW: Math.round(document.querySelector('#log figure.shot').getBoundingClientRect().width), pane: Math.round(document.getElementById('screen').getBoundingClientRect().width) }))()`);
-  check(photoPage.crumbs === '~ / photos / photo-looking-back' && photoPage.figW > 560, "a photo's own page has its address, and the picture now uses the pane's width", JSON.stringify(photoPage));
-  await shot('29-photo-page', 1500);
-  await typeText('gallery'); await enter();
-  await until(() => ev(`document.querySelectorAll('#log .sheet').length === 2`), 3000, 'gallery sheets');
-  const gl = await ev(`(() => ({ items: document.querySelectorAll('#log .sheet-item').length, play: document.querySelectorAll('#log .sheet .shot-play').length, labels: [...document.querySelectorAll('#log .entry > p .dim')].map((d) => d.textContent).join('|') }))()`);
-  check(gl.items === 16 && gl.play === 1 && gl.labels.includes('from my projects') && gl.labels.includes('photographs'), 'gallery shows its two groups as sheets, the video marked', JSON.stringify(gl));
-  // narrow screens
-  for (const w of [820, 390]) {
-    await viewport(w, 900, w < 500);
-    await load('about:blank'); await load(BASE); await bootDone();
-    if (w < 1000) await ev(`document.querySelector('.tab[data-view="term"]')?.click()`);
-    await typeText('photos'); await enter();
-    await until(() => ev(`document.querySelectorAll('#log .sheet-item').length === 12`), 3000, 'sheet narrow');
-    const nr = await ev(`(() => { const items = [...document.querySelectorAll('#log .sheet-item')]; const pane = document.getElementById('screen').getBoundingClientRect(); return { cols: items.filter((i) => Math.abs(i.getBoundingClientRect().top - items[0].getBoundingClientRect().top) < 2).length, inside: Math.max(...items.map((i) => i.getBoundingClientRect().right)) <= pane.right + 1, doc: document.documentElement.scrollWidth - innerWidth, w: Math.round(items[0].getBoundingClientRect().width) }; })()`);
-    check(nr.inside && nr.doc <= 0 && nr.cols >= 2 && nr.w >= 100, `the contact sheet fits at ${w}px (${nr.cols} columns)`, JSON.stringify(nr));
-    if (w === 390) await shot('29-contact-sheet-phone', 400);
-  }
-  await viewport(1440, 900);
-
-  console.log('photography (the real photographs)');
-  await viewport(1440, 900);
-  await load('about:blank'); await load(BASE); await bootDone();
-  await typeText('photos'); await enter();
-  await until(async () => (await logText()).includes('16. '), 3000, 'photos list');
-  const plist = await logText();
-  check(plist.includes('5. A backpack resting on the grass') && plist.includes('16. A figure on the lawn') && !plist.includes('1. A black hole'), 'photos lists the twelve photographs, numbered 5 to 16');
-  await ev(`document.querySelector('#g-photos').scrollIntoView()`);
-  await until(() => ev(`[...document.querySelectorAll('#gui .gphotos img')].every((i) => i.complete && i.naturalWidth > 0)`), 20000, 'real thumbnails');
-  const rp = await ev(`(() => ({ cards: document.querySelectorAll('#gui .gphotos [data-cmd]').length, bad: [...document.querySelectorAll('#gui .gphotos img')].filter((i) => i.getAttribute('width') !== String(i.naturalWidth) || i.getAttribute('height') !== String(i.naturalHeight)).length, doc: document.documentElement.scrollWidth, vw: innerWidth }))()`);
-  check(rp.cards === 12 && rp.bad === 0 && rp.doc <= rp.vw, 'the overview shows twelve photo cards with exact declared sizes', JSON.stringify(rp));
-  await shot('28-photos-overview', 300);
-  // Worked out ahead of time: once the thumbnails are on screen and the browser is idle, opening a picture needs no pictures at all.
-  await ev(`document.querySelector('#g-photos').scrollIntoView()`);
-  await until(() => ev(`[...document.querySelectorAll('#gui .gphotos img')].every((i) => i.complete && i.naturalWidth > 0)`), 20000, 'thumbnails for precompute');
-  await sleep(2500); // the precompute starts shortly after and runs in idle time
-  await send('Network.setCacheDisabled', { cacheDisabled: true });
-  await send('Fetch.enable', { patterns: [{ urlPattern: '*assets/gallery/photo-*.jpg', requestStage: 'Request' }] });
-  const heldPictures = [];
-  const hold = (m) => { const j = JSON.parse(m.data); if (j.method === 'Fetch.requestPaused') { heldPictures.push(j.params.request.url); setTimeout(() => send('Fetch.continueRequest', { requestId: j.params.requestId }).catch(() => {}), 4000); } };
-  ws.addEventListener('message', hold);
-  await typeText('view 7'); await enter();
-  const tAhead = Date.now();
-  await until(() => ev(`(() => { const p = document.querySelector('#log .shot-ascii'); return !!p && !p.hidden && p.textContent.length > 100; })()`), 1500, 'letters from the precomputed result');
-  check(Date.now() - tAhead < 800 && !(await ev(`(() => { const i = document.querySelector('#log .shot-img'); return i.complete && i.naturalWidth > 0; })()`)), 'a picture whose letters were worked out ahead of time shows them even while every picture request is held up', JSON.stringify({ ms: Date.now() - tAhead, held: heldPictures.map((u) => u.split('/').pop()) }));
-  await until(() => ev(`document.querySelector('#log .shot-ascii').hidden`), 9000, 'held pictures arrive');
-  ws.removeEventListener('message', hold);
-  await send('Fetch.disable');
-  await send('Network.setCacheDisabled', { cacheDisabled: false });
-  // A slow connection: the full-size photo takes 2.5 s to arrive. The letters must not wait for it (they come from the small version),
-  // and the picture must not be swapped in before it has arrived.
-  await send('Network.setCacheDisabled', { cacheDisabled: true });
-  await send('Fetch.enable', { patterns: [{ urlPattern: '*assets/gallery/photo-looking-back.jpg', requestStage: 'Request' }] });
-  const slowRequests = [];
-  const onPaused = (m) => { const j = JSON.parse(m.data); if (j.method === 'Fetch.requestPaused') { slowRequests.push(Date.now()); setTimeout(() => send('Fetch.continueRequest', { requestId: j.params.requestId }).catch(() => {}), 2500); } };
-  ws.addEventListener('message', onPaused);
-  const tSlow = Date.now();
-  await typeText('view 6'); await enter();
-  await until(() => ev(`(() => { const p = document.querySelector('#log .shot-ascii'); return !!p && !p.hidden && p.textContent.length > 100; })()`), 1500, 'letters appear while the photo is still downloading');
-  const early = await ev(`(() => { const i = document.querySelector('#log .shot-img'); return { loaded: i.complete && i.naturalWidth > 0, asciiVisible: !document.querySelector('#log .shot-ascii').hidden }; })()`);
-  check(early.asciiVisible && !early.loaded && Date.now() - tSlow < 2000, 'the letters appear at once, before the full photo has downloaded', JSON.stringify({ early, ms: Date.now() - tSlow }));
-  await sleep(1300); // longer than the pause on the letters (0.8 s): the photo is still on its way
-  check(await ev(`!document.querySelector('#log .shot-ascii').hidden && document.querySelector('#log figure.shot').classList.contains('is-ascii')`), 'the letters stay until the photo has arrived (no swapping to an empty picture)');
-  await until(() => ev(`document.querySelector('#log .shot-ascii').hidden`), 8000, 'reveal after arrival');
-  check((await ev(`(() => { const i = document.querySelector('#log .shot-img'); return i.complete && i.naturalWidth === 1600; })()`)) && slowRequests.length >= 1, 'then the full photo is shown, fully loaded');
-  ws.removeEventListener('message', onPaused);
-  await send('Fetch.disable');
-  await send('Network.setCacheDisabled', { cacheDisabled: false });
-  await typeText('view 6'); await enter();
-  await until(() => ev(`!!document.querySelector('#log figure.shot .exif')`), 3000, 'real photo figure');
-  check((await ev(`document.querySelector('#log figure.shot .exif').textContent`)) === 'NIKON Z 6 · NIKKOR Z 35mm f/1.8 S · 35 mm · f/1.8 · 1/3200 s · ISO 100', 'a real photo shows its camera, lens and settings');
-  await sleep(1600);
-  await ev(`document.querySelector('#log figure.shot .shot-open').click()`);
-  await until(() => ev(`!!document.querySelector('#windows .win .exif')`), 3000, 'real photo window');
-  await until(() => ev(`(() => { const i = document.querySelector('#windows .wstage img'); return i.complete && i.naturalWidth > 0; })()`), 10000, 'real photo loaded');
-  await shot('28-photo-real-window', 500);
-  await ev(`document.querySelector('#windows .win').focus()`);
-  await key('Escape', 'Escape', 27);
-  // The portrait photos
-  await typeText('view 12'); await enter();
-  await until(() => ev(`!!document.querySelector('#log figure.shot')`), 3000, 'portrait figure');
-  await sleep(1600);
-  await ev(`document.querySelector('#log .shot-open').click()`);
-  await until(() => ev(`!!document.querySelector('#windows .win .exif')`), 3000, 'portrait window');
-  await until(() => ev(`(() => { const i = document.querySelector('#windows .wstage img'); return i.complete && i.naturalWidth > 0; })()`), 10000, 'portrait loaded');
-  const portrait = await ev(`(() => { const w = document.querySelector('#windows .win'); const r = w.getBoundingClientRect(); return { meta: w.querySelector('.wmeta').textContent, inside: r.top >= 0 && r.bottom <= innerHeight, } })()`);
-  check(portrait.meta === '1065×1600 · JPG' && portrait.inside, 'a portrait photo opens upright and fits the window', JSON.stringify(portrait));
-  await ev(`document.querySelector('#windows .win').focus()`);
-  await key('Escape', 'Escape', 27);
-  await typeText('clear'); await enter();
-
-  console.log('photography (a copy of the site with two photographs)');
-  const haveImageTools = (() => { try { execFileSync('magick', ['-version'], { stdio: 'ignore' }); execFileSync('sips', ['--help'], { stdio: 'ignore' }); return true; } catch { return false; } })();
-  if (!haveImageTools) {
-    console.log('  skipped: needs ImageMagick and macOS sips');
-  } else {
-    const { makeFakePhoto } = await import('./fake-photo.mjs');
-    const { processPhoto } = await import('./add-photo.mjs');
-    const photoDir = await mkdtemp(join(tmpdir(), 'site-photos-'));
-    let photoServer;
-    try {
-      await cp(ROOT, photoDir, { recursive: true, filter: (src) => !/[\\/](\.git|node_modules|\.shots)([\\/]|$)/.test(src) });
-      const inDir = join(photoDir, '_in');
-      await mkdir(inDir, { recursive: true });
-      const expected = makeFakePhoto(join(inDir, 'IMG_1001.jpg'), { width: 2400, height: 1600 });
-      makeFakePhoto(join(inDir, 'IMG_1002.jpg'), { width: 2400, height: 1600, orientation: 6 });
-      const made = ['IMG_1001', 'IMG_1002'].map((n, i) => processPhoto(join(inDir, `${n}.jpg`), { outDir: join(photoDir, 'assets/gallery'), slug: `test-${i + 1}` }));
-      const entry = (r, i) => `  {
-    slug: '${r.slug}', kind: 'image', set: 'photo',
-    src: 'assets/gallery/${r.slug}.jpg', width: ${r.width}, height: ${r.height},
-    thumb: 'assets/gallery/${r.slug}-thumb.jpg', thumbWidth: ${r.thumbWidth}, thumbHeight: ${r.thumbHeight},
-    shot: ${JSON.stringify(r.shot).replace(/"([a-z]+)":/g, '$1: ').replace(/"/g, "'")},
-    en: { title: 'Test photo ${i + 1}', caption: 'A picture made only for the tests, number ${i + 1}. It shows a soft gradient.', alt: 'A smooth gradient from warm sand at the centre to deep blue at the edges, photo ${i + 1}.' },
-    zh: { title: '測試照片 ${i + 1}', caption: '只為測試製作的圖片，編號 ${i + 1}。畫面是柔和的漸層。', alt: '從中央的暖沙色漸層到邊緣的深藍色，照片 ${i + 1}。' },
-  },
-`;
-      const cfile = join(photoDir, 'src/content.js');
-      // The copy holds only the two test photos, not the real ones (so the numbers below are predictable).
-      const ctext = (await readFile(cfile, 'utf8')).replace(/\n  \{\n    slug: '[^']+',\n    kind: 'image',\n    set: 'photo',[\s\S]*?\n  \},/g, '');
-      const close = ctext.lastIndexOf('];', ctext.indexOf('export const skillGroups'));
-      await writeFile(cfile, ctext.slice(0, close) + made.map(entry).join('') + ctext.slice(close));
-      photoServer = spawn(process.execPath, [join(ROOT, 'scripts/serve.mjs'), '5192'], { stdio: 'ignore', env: { ...process.env, SITE_ROOT: photoDir, LIVERELOAD: '0' } });
-      await until(() => fetch('http://127.0.0.1:5192/').then((r) => r.ok), 8000, 'photo-site server');
-      const errorsBefore = consoleErrors.length;
-      await viewport(1440, 900);
-      await load('about:blank'); await load('http://127.0.0.1:5192/'); await bootDone();
-      await ev(`localStorage.clear()`);
-
-      // What the visitor downloads contains no private data.
-      const { privateSegments } = await import('./jpeg-meta.mjs');
-      for (const r of made) {
-        for (const f of [r.full, r.thumb]) {
-          const served = Buffer.from(await (await fetch(`http://127.0.0.1:5192/assets/gallery/${f.split('/').at(-1)}`)).arrayBuffer());
-          check(privateSegments(served).length === 0 && !['Jane Q. Owner', 'SN-123456', 'GPS', 'TESTCO'].some((x) => served.includes(x)), `${f.split('/').at(-1)} as served has no Exif, GPS, serial number or owner name`);
-        }
-      }
-      check(made[0].width === 1600 && made[0].height === 1067 && made[1].width === 1067 && made[1].height === 1600, 'the 2400x1600 photos became 1600 px, and the rotated one is upright');
-
-      // Commands
-      await typeText('help'); await enter();
-      await until(async () => (await logText()).includes('my photographs'), 3000, 'help lists photos');
-      check(true, 'help lists the photos command once there are photos');
-      await typeText('photos'); await enter();
-      await until(async () => (await logText()).includes('6. Test photo 2'), 3000, 'photos list');
-      const list = await logText();
-      check(list.includes('5. Test photo 1') && !list.includes('5. A black hole') && list.includes('view 5'), 'photos lists only the photos, numbered after the four project pictures');
-      await typeText('gallery'); await enter();
-      await until(async () => (await logText()).includes('from my projects'), 3000, 'gallery groups');
-      check((await logText()).includes('photographs'), 'gallery now has two labelled groups');
-
-      // Overview section
-      await ev(`document.querySelector('#g-photos').scrollIntoView()`);
-      await until(() => ev(`[...document.querySelectorAll('#gui .gphotos img')].every((i) => i.complete && i.naturalWidth > 0)`), 15000, 'photo thumbnails');
-      const ov = await ev(`(() => ({ heading: document.querySelector('#g-photos').textContent, cards: [...document.querySelectorAll('#gui .gphotos [data-cmd]')].map((c) => c.dataset.cmd), dims: [...document.querySelectorAll('#gui .gphotos img')].map((i) => [i.getAttribute('width'), i.getAttribute('height'), i.naturalWidth, i.naturalHeight]), gallery: document.querySelectorAll('#gui .ggallery:not(.gphotos) [data-cmd]').length }))()`);
-      check(ov.heading === '// PHOTOS' && ov.cards.join() === 'view 5,view 6' && ov.gallery === 4, 'the overview has a PHOTOS section and the four renders stay under GALLERY', JSON.stringify(ov));
-      check(ov.dims[0][0] === String(ov.dims[0][2]) && ov.dims[0][1] === String(ov.dims[0][3]) && ov.dims[1][0] === String(ov.dims[1][2]), 'thumbnail sizes are declared exactly (no jumping)', JSON.stringify(ov.dims));
-
-      // A photo in the terminal: ASCII first, then the real image, with the shooting details
-      await ev(`document.querySelector('#gui [data-cmd="view 5"]').click()`);
-      await until(() => ev(`!!document.querySelector('#log figure.shot .exif')`), 3000, 'figure with details');
-      const expectedLine = `${expected.camera} · ${expected.lens} · ${expected.focal} mm · f/${expected.aperture} · ${expected.shutter} s · ISO ${expected.iso}`;
-      check((await ev(`document.querySelector('#log figure.shot .exif').textContent`)) === expectedLine, 'the shooting details are shown under the picture', expectedLine);
-      await until(() => ev(`(() => { const p = document.querySelector('#log figure.shot .shot-ascii'); return !!p && !p.hidden && p.textContent.length > 200; })()`), 4000, 'ascii phase');
-      check(true, 'a photo is drawn in characters first, like the other pictures');
-      await until(() => ev(`document.querySelector('#log figure.shot .shot-ascii').hidden`), 6000, 'ascii phase ends');
-      check(await ev(`(() => { const i = document.querySelector('#log figure.shot .shot-img'); return i.complete && i.naturalWidth === 1600; })()`), 'then the full photo');
-      await shot('27-photo-terminal', 1300);
-
-      // In a floating window
-      await ev(`document.querySelector('#log figure.shot .shot-open').click()`);
-      await until(() => ev(`!!document.querySelector('#windows .win .exif')`), 3000, 'photo window');
-      const pw = await ev(`(() => { const w = document.querySelector('#windows .win'); const r = w.getBoundingClientRect(); return { title: w.querySelector('.wtitle').textContent, meta: w.querySelector('.wmeta').textContent, exif: w.querySelector('.exif').textContent, inside: r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth, tag: w.querySelector('.exif').tagName }; })()`);
-      check(pw.title === 'test-1-fix' || pw.title === `${made[0].slug}.jpg`, 'the window is titled with the file name', JSON.stringify(pw));
-      check(pw.meta === '1600×1067 · JPG' && pw.exif === expectedLine && pw.tag === 'SMALL', 'the window shows size and the shooting details (as text)', JSON.stringify(pw));
-      check(pw.inside, 'the photo window fits on the screen');
-      await shot('27-photo-window', 400);
-      await ev(`document.querySelector('#windows .wnext').click()`);
-      await until(() => ev(`document.querySelector('#windows .win .wmeta').textContent.startsWith('1067×1600')`), 3000, 'next photo (portrait)');
-      await until(() => ev(`(() => { const i = document.querySelector('#windows .wstage img'); return i.complete && i.naturalWidth > 0; })()`), 5000, 'portrait photo loaded');
-      const tall = await ev(`(() => { const w = document.querySelector('#windows .win'); const r = w.getBoundingClientRect(); const i = w.querySelector('.wstage img').getBoundingClientRect(); return { inside: r.bottom <= innerHeight + 1 && r.top >= 0, imgH: Math.round(i.height), imgW: Math.round(i.width) }; })()`);
-      check(tall.inside && tall.imgH > tall.imgW, 'a portrait photo also fits in the window (letterboxed, not cropped)', JSON.stringify(tall));
-      await ev(`document.querySelector('#windows .win').focus()`);
-      await key('Escape', 'Escape', 27);
-
-      // Dock and language
-      await typeText('photos'); await enter(); await sleep(300);
-      check((await ev(`document.querySelector('.dock-item[aria-current="true"]')?.dataset.cmd`)) === 'gallery', 'photos highlights the gallery item in the dock');
-      await typeText('lang zh'); await enter(); await sleep(900);
-      await typeText('photos'); await enter();
-      await until(async () => (await logText()).includes('測試照片 2'), 3000, 'zh photos');
-      check((await logText()).includes('每張照片下方有拍攝資訊') && (await ev(`document.querySelector('#g-photos').textContent`)) === '// 攝影', 'photography is available in Traditional Chinese');
-      await typeText('lang en'); await enter(); await sleep(700);
-      // Contrast of the details line in every theme (it is on a photo's own page)
-      await typeText('view 5'); await enter();
-      await until(() => ev(`!!document.querySelector('#log .exif')`), 3000, 'details line');
-      for (const theme of ['dark', 'light', 'amber', 'matrix']) {
-        await typeText(`theme ${theme}`); await enter(); await sleep(700);
-        // The details line is drawn in --accent on the panel colour: resolve both through probe elements (computed values come back as rgb()).
-        const cr = await ev(`(() => { const lum = (c) => { const m = c.match(/[\\d.]+/g).map(Number).slice(0, 3).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * m[0] + 0.7152 * m[1] + 0.0722 * m[2]; }; const probe = document.createElement('i'); probe.style.color = 'var(--accent)'; probe.style.backgroundColor = 'var(--panel)'; document.body.append(probe); const cs = getComputedStyle(probe); const used = getComputedStyle(document.querySelector('#log .exif')).color; const fg = cs.color; const bgc = cs.backgroundColor; probe.remove(); const a = lum(fg); const b = lum(bgc); return { ratio: (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05), usesAccent: used === fg, used, accent: fg }; })()`);
-        check(cr.usesAccent && cr.ratio >= 4.5, `the shooting details have AA contrast in the ${theme} theme`, JSON.stringify(cr));
-      }
-      // Phone
-      await viewport(390, 844, true);
-      await load('about:blank'); await load('http://127.0.0.1:5192/'); await bootDone();
-      await typeText('view 6'); await enter();
-      await until(() => ev(`!!document.querySelector('#log figure.shot .exif')`), 3000, 'phone figure');
-      await sleep(1500);
-      check((await ev(`document.documentElement.scrollWidth - innerWidth`)) <= 0, 'a photo with its details fits a phone screen without sideways scrolling');
-      await ev(`document.querySelector('#log figure.shot .shot-open').click()`);
-      await until(() => ev(`!!document.querySelector('dialog.viewer[open] .exif')`), 3000, 'phone dialog');
-      check((await ev(`document.querySelector('dialog.viewer .exif').textContent`)).includes('f/1.8'), 'on a phone the modal viewer also shows the details');
-      await shot('27-photo-phone', 300);
-      await key('Escape', 'Escape', 27);
-      await viewport(1440, 900);
-      consoleErrors.length = errorsBefore;
-    } finally {
-      await load('about:blank').catch(() => {});
-      photoServer?.kill();
-      await rm(photoDir, { recursive: true, force: true }).catch(() => {});
-    }
-  }
 
   check(consoleErrors.length === 0, 'no console errors / CSP violations', consoleErrors.join(' | '));
 } catch (e) {

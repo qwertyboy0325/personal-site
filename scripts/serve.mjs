@@ -61,7 +61,7 @@ export function parseRange(header, size) {
 }
 
 const IGNORED = /(^|\/)(\.git|node_modules|\.shots|test|scripts|\.DS_Store)(\/|$)/;
-const PRERENDER_INPUTS = /^src\/(content|engine|render)\.js$|^src\/fx\/(face|rain)\.js$/;
+const PRERENDER_INPUTS = /^src\/(content|page|render)\.js$|^src\/fx\/(face|rain)\.js$/;
 
 /** What should an open page do after `rel` changed? 'css' | 'reload' | null. */
 export function classifyChange(rel) {

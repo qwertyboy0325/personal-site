@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { isEmail, seg, renderBlocks } from '../src/render.js';
 import { execute } from '../src/engine.js';
-import { guiHtml } from '../src/gui.js';
+import { renderPage } from '../src/page.js';
 import { profile, ui, LANGS } from '../src/content.js';
 
 const ctx = (over = {}) => ({ lang: 'en', theme: 'dark', history: [], ...over });
@@ -42,7 +42,7 @@ test('the published address is exactly the one the owner gave, and it is well-fo
 test('with no email set, nothing about email appears anywhere (setting profile.email to null hides it all)', () => {
   withEmail(null, () => {
     assert.ok(!/mailto:|data-copy|@/.test(contact()), contact());
-    for (const lang of LANGS) assert.ok(!/data-copy|gmail/.test(guiHtml(lang)));
+    for (const lang of LANGS) assert.ok(!/data-copy|mailto:|gmail/.test(renderPage(lang)));
   });
 });
 
@@ -56,11 +56,14 @@ test('with an email set: contact shows a mailto link and a copy button, in both 
   });
 });
 
-test('with an email set: the overview has a copy button near the top and in the contact section', () => {
+test('with an email set: the page shows the address as a mailto link with a copy button in the contact section', () => {
   withEmail('hello@example.com', () => {
     for (const lang of LANGS) {
-      const html = guiHtml(lang);
-      assert.equal((html.match(/data-copy="hello@example\.com"/g) ?? []).length, 2, 'top of the card and the contact section');
+      const html = renderPage(lang);
+      const contact = html.slice(html.indexOf('id="contact"'));
+      assert.equal((html.match(/data-copy="hello@example\.com"/g) ?? []).length, 1, 'one copy button, in the contact section');
+      assert.match(contact, /data-copy="hello@example\.com"/);
+      assert.match(contact, /<a class="addr" href="mailto:hello@example\.com">hello@example\.com<\/a>/, 'the address itself is visible and selectable');
       assert.ok(html.includes(ui[lang].contactButton));
       assert.ok(!/<[^>]*\son\w+=/.test(html));
     }
@@ -69,7 +72,7 @@ test('with an email set: the overview has a copy button near the top and in the 
 
 test('a malformed address is ignored rather than rendered', () => {
   withEmail('"><script>alert(1)</script>', () => {
-    assert.ok(!guiHtml('en').includes('data-copy'));
+    assert.ok(!renderPage('en').includes('data-copy'));
     assert.ok(!contact().includes('<script'));
   });
 });
@@ -83,8 +86,7 @@ test('copy feedback strings exist in both languages and the failure message incl
 
 test('index.html: contact buttons start hidden, and the toast is a polite live region', async () => {
   const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
-  assert.match(html, /id="btn-mail" hidden/);
-  assert.match(html, /id="tab-mail" hidden/);
+  assert.match(html, /<button type="button" class="pill" data-copy="[^"]+" aria-label="[^"]+" hidden>/, 'the copy button only appears once the script can copy');
   assert.match(html, /<div id="toast" class="toast" role="status" aria-live="polite"><\/div>/);
 });
 
@@ -93,7 +95,7 @@ test('main.js: copies with the Clipboard API, falls back, and always tells the p
   assert.match(js, /navigator\.clipboard\.writeText/);
   assert.match(js, /execCommand\('copy'\)/);
   assert.match(js, /contactFailed\(addr\)/, 'if copying is impossible the address is shown instead');
-  assert.match(js, /if \(profile\.email\)/, 'buttons only exist when an address is set');
+  assert.match(js, /profile\.email\) copyEmail/, 'nothing is copied unless an address is set');
 });
 
 test('styles: the toast is out of the way until shown, and hidden in print', async () => {
@@ -101,5 +103,4 @@ test('styles: the toast is out of the way until shown, and hidden in print', asy
   assert.match(css, /\.toast \{[^}]*pointer-events: none/);
   assert.match(css, /\.toast\.show \{ opacity: 1;/);
   assert.ok(!/\.toast:empty/.test(css), 'an empty live region must stay in the accessibility tree');
-  assert.match(css, /\.tab-mail \{[^}]*min-width: 56px/);
 });

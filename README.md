@@ -1,8 +1,10 @@
 # personal-site
 
-終端機風格的單頁互動個人網站。純 HTML / CSS / JavaScript：沒有框架、沒有第三方資源、應用本身不需要 build。
+單頁個人網站，主題是「光」：照片、用物理算出來的光（黑洞渲染器），以及被拆成字元的光。純 HTML / CSS / JavaScript：沒有框架、沒有第三方資源、應用本身不需要 build。
 
-左右分屏：左邊是 GUI 概覽（名片、專案與作品卡片、技能、即時遙測），右邊是終端機。點卡片會在終端機執行對應指令，在終端機輸入指令也會讓對應的卡片亮起。另有準星游標、ASCII 轉場、ASCII 3D 與背景特效。
+頁面依序是：首屏 → 最近 → 照片 → 實驗 → 工作 → 關於 → 鏡子 → 聯絡。每張圖第一次出現時都會**從字元顯影成照片**（首屏是解析度一段一段升高、照片從中心溶解、黑洞由亮帶掃描），拍攝參數同時跳到真實數值；標題與名稱也用同一套字元「顯影」。首屏在滑鼠底下會變成手電筒；「關於」的 ASCII 臉會看著游標；最後的「鏡子」用你的相機在燈箱上把你畫成字元，有快門與可複製的印樣。
+
+原本的終端機還在：按 `~`（或點左下角那行指令列）從底部拉出來，指令、補全、歷史、彩蛋都一樣；輸入 `photos`、`about` 這類指令時，後面的頁面會捲到對應的區塊。
 
 ## 執行
 
@@ -19,110 +21,112 @@ npm run build    # 重新產生 index.html 內的預渲染區塊
 - 改 `.css`：只換樣式，**不重新整理**，頁面狀態（已輸入的指令、主題等）保留。
 - 改 `.js` / `.html` / `.svg` / `.json`：自動重新載入。
 - 改 `test/`、`scripts/`、`README.md`、`.git`、`.shots`：忽略。
-- 改 `src/content.js`、`engine.js`、`render.js`、`fx/face.js`、`fx/rain.js` 時，終端機會提醒你跑 `npm run build`，因為這些會影響 `index.html` 內預渲染的無 JS 內容（伺服器不會替你改寫檔案）。
+- 改 `src/content.js`、`page.js`、`render.js`、`fx/face.js`、`fx/rain.js` 時，終端機會提醒你跑 `npm run build`，因為這些會影響 `index.html` 內預渲染的無 JS 內容（伺服器不會替你改寫檔案）。
 - 開發伺服器支援 HTTP Range（分段傳輸）：**Safari 沒有它就不會播放 `<video>`**。
 - 熱重載的腳本與放寬的 CSP（`connect-src 'self'`）只在伺服器回應時注入，磁碟上的 `index.html` 與部署的內容不受影響。`LIVERELOAD=0 npm run dev` 可關閉。
 - 存檔後頁面沒反應時，先看執行 `npm run dev` 的終端機有沒有印出 `reload` 或 `css` 的訊息；沒有的話代表該檔案屬於被忽略的類型。
 
-## 指令
+## 頁面
+
+| 區塊 | 內容（都在 `src/content.js`） |
+|---|---|
+| 首屏 | `home.hero` 的照片 + 名字 + `ui[lang].page.line` 一句話；照片從字元顯影、拍攝參數跳到真值；滑鼠移上去變手電筒 |
+| 最近 | `ui[lang].page.now.items`：「正在做／正在想」，一行一句，改字就能更新 |
+| 照片 | `home.photos` 選的 6 張（順序決定版型：大、直、三張直幅、全景），點開是檢視器；「看全部」在終端機打開 `photos` |
+| 實驗 | 黑洞渲染器（掃描顯影）、鏡子（一直維持字元）、爆炸特效、文字 3D；小卡片在終端機打開對應指令 |
+| 工作 | 4 個公開專案（連到 GitHub）與 `home.workDocs` 的文件（在終端機打開） |
+| 關於 | 第一人稱的兩段話、事實表（相機、鏡頭、程式、語言、合作）、會看人的 ASCII 臉 |
+| 鏡子 | 相機 → 字元，在燈箱上即時顯示；快門把這一格印成可複製的文字；按下按鈕前不碰相機 |
+| 聯絡 | email（可選取、可複製）、GitHub、狀態列與色溫 |
+
+**兩種光**：暖色（`--sun`）給「拍下來的、和人有關的」：照片、參數、導覽的光點、關於、聯絡；冷色（`--screen`，延續舊版的青綠）給「寫出來的」：工作清單、路徑標籤、終端機。`--sun` 依訪客當地時間變化（白天 5200K 偏白、傍晚 3400K、晚上 2700K、深夜 2200K），頁尾會寫出來；`theme 2700k` 可固定，`theme auto` 回到依時間。
+
+## 指令（按 `~` 打開終端機）
 
 | 指令 | 作用 |
 |---|---|
 | `help` | 指令清單 |
-| `about` `projects` `works` `skills` `contact` | 內容。`project <編號\|名稱>` 看單一專案，`work <編號\|名稱>` 看單一作品 |
-| `gallery` `photos` `view <編號\|名稱>` | 圖片、影片與照片：`gallery`／`photos` 是一整面**縮圖格**（點縮圖在檢視器放大，點底下的標題進入該張的頁面）。`view 1` 會先把圖片用字元畫出來（由圖片自己的像素算出），再「溶解」成真正的圖片；點圖片開檢視器（←/→ 切換、Esc 關閉）：寬螢幕＋滑鼠時是**可拖曳的浮動視窗**（可同時開多個，點擊置前，標題列顯示檔名與尺寸，Alt+方向鍵可用鍵盤移動），窄螢幕與觸控則是全頁對話框。左側概覽也有縮圖卡片 |
+| `about` `projects` `works` `skills` `contact` | 內容。`project <編號\|名稱>` 看單一專案，`work <編號\|名稱>` 看單一作品；頁面同時捲到對應區塊 |
+| `gallery` `photos` `view <編號\|名稱>` | 圖片、影片與照片：縮圖格（點縮圖在檢視器放大，點標題進入該張的頁面）。`view 1` 先用字元畫出圖片（由圖片自己的像素算出），再溶解成真正的圖片 |
 | `ls` `cat <檔案>` `open <目標>` | 虛擬檔案系統與開啟連結 |
-| `theme [dark\|light\|amber\|matrix]` | 色彩主題 |
-| `lang [en\|zh]` | 語言（預設依瀏覽器語言） |
+| `theme [auto\|5200k\|3400k\|2700k\|2200k]` | 頁面光的色溫（`auto` 依當地時間；也可以打 `theme 2700`）。彩蛋：`theme matrix` |
+| `lang [en\|zh]` | 語言（預設依瀏覽器語言）；整個頁面用新語言重新顯示 |
 | `ascii`（別名 `face`） | ASCII 臉：眼睛跟著游標、會眨眼、你打字時嘴巴會動 |
 | `3d [donut\|cube\|sphere]` | 用文字畫的旋轉 3D 模型（有光影與遮擋），游標控制轉動；直接輸入 `cube` 等同 `3d cube` |
-| `fx [both\|rain\|network\|off]` | 背景特效 |
-| `transition [auto\|dissolve\|scan\|rain\|off]` | ASCII 轉場 |
-| `cursor [full\|minimal\|off]` | 準星游標；預設 `minimal`（小圓環＋會淡出的座標），`full` 才有滿版十字線 |
-| `mode [page\|log]` | `page`（預設）：右側像文件一樣**一次顯示一頁**，新的一頁取代上一頁；`log`：像傳統終端機，每個指令的輸出都保留、往下捲 |
-| `mirror` `mirror off` | **相機鏡子**：按下按鈕後用相機把你畫成即時的字元（左右翻轉像鏡子）。只在本機處理，不錄影、不儲存、不上傳；可「複製這一格成文字」。Stop／Esc／離開頁面／分頁被隱藏都會立刻關掉相機 |
-| `hud [on\|off]`（別名 `gui`） | 左側概覽。≥ 1000px 與終端機左右並排；較窄時改用上方「概覽｜終端機」分頁 |
+| `transition [auto\|dissolve\|scan\|rain\|off]` | 終端機輸出的 ASCII 轉場 |
+| `mode [page\|log]` | `page`（預設）：一次顯示一頁；`log`：像傳統終端機，每個指令的輸出都保留、往下捲 |
+| `mirror` `mirror off` | 在終端機裡開相機鏡子：會跳出幾乎佔滿視窗的大畫面（頁面最下面的鏡子則留在燈箱裡） |
 | `clear` `history` | 清除畫面、歷史指令 |
 
-操作：`Tab` 補全、`↑/↓` 歷史、`Ctrl+L` 清除、`Ctrl+C` 取消、網址 `#about` `#projects` `#skills` `#contact` `#help` 可直接連到內容。選擇（主題、語言、特效、游標、概覽）會存在 `localStorage`。
+操作：`~` 開關終端機、`Esc` 關閉、`Tab` 補全、`↑/↓` 歷史、`Ctrl+L` 清除、`Ctrl+C` 取消。網址 `#photos` `#lab` `#work` `#about` `#mirror` `#contact` 會捲到頁面上的區塊；其他終端機認得的網址（`#projects`、`#help`、`#works/black-hole`、`#photos/looking-back`…）會打開終端機並顯示那一頁。色溫、語言、`mode`、`transition` 會存在 `localStorage`。
 
-彩蛋（不在 help 裡）：`neofetch`、`whoami`、`sudo`、`exit`、`date`、`echo`。
+彩蛋（不在 help 裡）：`neofetch`、`whoami`、`sudo`、`exit`、`date`、`echo`、`theme matrix`。
 
 ## 結構
 
 ```
-index.html            骨架 + 預渲染的英文內容（沒有 JS 也能讀）
-src/content.js        所有文案（中英）、專案、技能 —— 要改內容只改這裡
+index.html            骨架 + 預渲染的英文頁面（沒有 JS 也能讀）+ 終端機抽屜
+src/content.js        所有文案（中英）、專案、作品、圖庫、首頁選了哪些圖（`home`）—— 要改內容只改這裡
+src/page.js           首頁 -> HTML 字串（純函式；預渲染與切換語言共用）
+src/site.js           讓首頁動起來：顯影、手電筒、標題解碼、導覽光點、色溫、ASCII 臉、鏡子的快門與印樣
+src/light.js          光與動態的純函式：色溫、曝光數字、字元解碼、顯影階梯（可在 Node 測試）
+src/main.js           終端機抽屜、指令執行、語言與色溫、網址，以及把頁面和終端機接起來
 src/engine.js         指令引擎：純函式，沒有 DOM，可在 Node 測試
-src/render.js         區塊 -> HTML 字串，唯一的渲染器（瀏覽器與預渲染共用）
-src/main.js           DOM、鍵盤、主題、語言、開機、各效果的接線
-src/lightbox.js       圖片檢視器（窄螢幕／觸控）：原生 <dialog>（焦點陷阱、Esc、焦點回到來源），支援影片，關閉時停止播放
-src/windows.js        圖片檢視器（寬螢幕＋滑鼠）：可拖曳、可堆疊的浮動視窗（最多 6 個、拖曳限制在畫面內、非 modal，終端機照常可用）
+src/render.js         終端機輸出區塊 -> HTML 字串
+src/route.js          指令 ↔ 網址 hash ↔ 標題（純函式）
+src/lightbox.js       圖片檢視器：原生 <dialog>（焦點陷阱、Esc、焦點回到來源），支援影片，關閉時停止播放
+src/viewer-content.js 檢視器的內容：<img>/<video> 的建立、拍攝資訊、停止影片
 src/photos.js         攝影：拍攝資訊的白名單與格式化（純函式）
-src/route.js          每個「頁面」的位置：指令 ↔ 網址 hash ↔ 麵包屑 ↔ 標題（純函式）
-src/dock.js           寬螢幕＋滑鼠的 dock 導覽：七個主要指令、游標附近的圖示放大、目前區段的圓點（純函式 + 小控制器）
-src/viewer-content.js 兩種檢視器共用：檔名／尺寸、<img>/<video> 的建立、停止影片
+src/guard.js          啟動守門員（普通腳本）：主程式沒啟動時顯示原因
 src/fx/imgascii.js    圖片 -> ASCII（純函式：RGBA 像素 -> 字元，含自動對比與透明度處理）
-assets/gallery/       圖片與影片；`SOURCES.md` 記錄每個檔案的來源與轉檔方式
-src/gui.js            左側概覽：由 content.js 產生專案/作品/技能卡片，與終端機雙向連動（純函式 + 小控制器）
-src/hud.js            概覽底部的即時遙測與最近指令（只在面板實際顯示時才運作）
-src/hud-format.js     遙測用的純格式化函式
-src/guard.js          啟動守門員（普通腳本）：主程式沒啟動時顯示原因，而不是一個沒反應的頁面
-src/fx/rain.js        字元雨           src/fx/network.js   點線網路
-src/fx/fx.js          背景 canvas      src/fx/face.js      ASCII 臉
+src/fx/mirror.js      相機鏡子（頁面燈箱版與終端機大畫面版共用）
+src/fx/face.js        ASCII 臉      src/fx/rain.js  字元表與雜湊（臉與轉場共用）
 src/fx/ascii3d.js     ASCII 3D：曲面取樣 + z-buffer + 光影 -> 字元（純函式，可測試）
-src/fx/transition.js  ASCII 轉場的純邏輯（儲存格狀態 + 繪製）
-src/fx/wipe.js        轉場的 DOM 控制器（單一輸出消散 / 整頁 wipe）
-src/fx/reticle.js     準星游標與座標標籤
-assets/               游標用 SVG
-scripts/              prerender.mjs、serve.mjs、e2e.mjs
+src/fx/transition.js  ASCII 轉場的純邏輯      src/fx/wipe.js  轉場的 DOM 控制器
+assets/gallery/       圖片與影片；`SOURCES.md` 記錄每個檔案的來源與轉檔方式
+scripts/              prerender.mjs、serve.mjs、e2e.mjs、add-photo.mjs、make-og.mjs
 test/                 node:test 單元測試
 ```
 
 ## 設計與標準
 
 **可及性**
-- 輸出區是 `role="log"`；開機動畫期間 `aria-live="off"`，結束後才設為 `polite`。
-- 所有動畫特效（雨、網路、轉場、準星、遙測面板）都是 `aria-hidden`；轉場只在新輸出上疊一層 canvas，**不改動 DOM 文字**，所以螢幕閱讀器、選取與複製不受影響。
-- 輸入框使用原生 `<input>`，注音等輸入法組字期間不會被快捷鍵干擾。
-- 有 skip link、`:focus-visible`；概覽卡片是真正的 `<button>`，可用鍵盤操作；分頁用 `aria-pressed`。
+- 沒有 JavaScript、或開啟「減少動態」時，照片與文字直接就在那裡；顯影、解碼、手電筒都只是加上去的。所有 canvas 都是 `aria-hidden`，解碼中的標題最後一定落回原文。
+- 單一 `<h1>`（名字），每個區塊有標題；skip link 跳到內容；`:focus-visible` 有清楚的外框。
+- 照片是真正的連結（連到原圖檔），沒有 JS 也能點；有 JS 時改開檢視器。需要 JS 的按鈕（快門、複製、色溫、語言）一開始是 `hidden`。
+- 終端機：輸出區是 `role="log"`，開機動畫期間 `aria-live="off"`；輸入框是原生 `<input>`，注音等輸入法組字期間不會被快捷鍵干擾；`~` 只在不是打字的時候才會開關抽屜。
+- 觸控裝置沒有手電筒；點左下角的指令列打開終端機時不會自動跳出鍵盤。
 - 如果主程式在某個瀏覽器沒有啟動，`src/guard.js` 會在 3 秒後顯示說明框與實際錯誤，內容（預渲染）仍可閱讀。
-- 三個以上主題的所有文字顏色對比都 ≥ 4.5:1（`npm run e2e` 逐一量測）。
-- `prefers-reduced-motion`：不啟動轉場、背景動畫、準星波紋與眼睛追蹤。
-- 觸控裝置不顯示準星。概覽依螢幕寬度顯示（≥ 1000px 並排，較窄用分頁，所以平板與手機也能用），卡片與分頁高度 ≥ 44px，遙測中的最近指令按鈕 ≥ 24px（WCAG 2.2 最低標準）。
-- 快捷指令按鈕高度 44px；右上角工具列按鈕高 36px、寬 44px。
 
 **安全與隱私**
-- 嚴格的 CSP（`default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; media-src 'self'`，部署版沒有 `connect-src`，頁面無法對外發出任何請求）：沒有行內腳本、沒有行內樣式、沒有第三方來源。
-- 使用者輸入（例如 `echo`）一律跳脫；只有 `https://` 連結會被渲染成 `<a>`，且帶 `rel="noopener noreferrer"`。
-- 排版：終端機與細節用等寬字；只有大名字與標題用系統無襯線字（`--display`），名字用 `clamp()` 流體縮放（手機 40px → 寬螢幕 68px），320px 也不會溢出；e2e 逐寬度驗證。
-- **圖片轉場（字元 → 真圖）**：字元畫面不必等整張照片下載。頁面載入完成、瀏覽器閒下來時，會先把畫面上已有的縮圖換算好（依畫面寬度決定欄數、約每 7px 一個字，並記住結果）；打開一張圖時，若已算好就直接顯示，否則用已在快取的原圖或縮圖現算。縮圖與原圖算出的字元有 92–96% 完全相同、其餘只差一個層級（實測 16 張），所以不影響品質。完整照片到了才溶解，沒到之前字元一直留著。測試涵蓋：對齊（字元寬高與圖片誤差 < 1.5%）、慢網路（完整照片延遲 2.5 秒）、預先算好（全部圖片請求都被卡住時仍立即顯示）。
-- **相機鏡子**（`src/fx/mirror.js`）：`mirror` 頁面（網址 `#mirror`）先用文字說明「不會錄影、儲存或上傳」，**按下按鈕才會要求相機**（開啟網址不會啟動相機）；開啟後會跳出**幾乎佔滿視窗的大畫面**（原生 `<dialog>`），畫面依相機的真實比例放到視窗容得下的最大尺寸（不拉伸、不裁切，視窗縮放會即時重排）；**字的密度分三級**：頁面內小框約每 7px 一個字（最多 100 欄）、視窗內大畫面約 7px（最多 200 欄）、**真正全螢幕約 5px（最多 420 欄，1440p 螢幕約 118 行）**，並依裝置**自動權衡解析度與速度**——每 10 格檢查一次，格子太貴或太晚就把字數降到最低 40%，有餘裕再慢慢調回（實測：一般電腦全螢幕每格約 5 毫秒、維持 15 格/秒；把 CPU 降速 6 倍後約 10 秒內自動降到約 220 欄、仍維持 12–13 格/秒）；有「全螢幕」「複製成文字」「✕」），關閉大畫面（✕／Esc）＝關掉相機。啟動也很穩：關掉後 0.7 秒內再開會先稍等、等待中可以按停止取消（晚到的相機會被立刻關掉）、等超過 8 秒會提示該檢查權限；只用視訊、不要麥克風；影像在裝置上轉成文字就丟掉。程式碼完全不使用 `MediaRecorder`、`toDataURL`、`toBlob`、`captureStream`、網路請求（`test/mirror.test.mjs` 掃描 `src/` 把關）。效能：每格只花約 2 毫秒（讀相機約 1.3、轉文字約 0.5、更新頁面約 0.05）；只在尺寸改變時才改字級與行高、文字沒變就不重寫，並依單格耗時自動降低更新頻率（慢手機最低每秒 4 格）。文字轉換本身（`imageToAscii`）改成每格只加權一次、模糊用累加和，並以一份「簡單但明顯正確」的舊版（`scripts/imgascii-reference.mjs`）當標準答案，隨機 400 組圖片與參數驗證結果一致（只允許浮點邊界上差一個層級）。e2e 用 Chrome 的假相機驗證開啟、即時變化、複製、Stop／Esc／`mirror off`／換頁會放掉相機、三種錯誤訊息、淺色主題與手機版。
-- **閱讀窗格**：右側預設一次顯示一頁（`mode page`）。頂端的位置列有「上一頁／下一頁」與麵包屑（`~ / projects / vox-proof`，前面的部分可點）。每一頁都有自己的網址：`#projects/<名稱>`、`#works/<名稱>`、`#gallery/<名稱>`、`#photos/<名稱>`，另有 `#about`、`#projects`、`#works`、`#gallery`、`#photos`、`#skills`、`#contact`、`#help`（舊的 `#works` 之類連結照常可用）；瀏覽器的上一頁／下一頁、手動改網址、分享連結都能回到同一頁，分頁標題也跟著變。切換語言會用新語言重新顯示目前這一頁。`theme`、`lang` 這類「動作」指令的輸出會加在頁面下方，不會取代頁面；`clear` 清空窗格並回到 `~`。對應的純函式在 `src/route.js`（`test/route.test.mjs`），e2e 在「reader pane」與「contact sheets」兩段。注意：`#` 後面的網址搜尋引擎不會各自收錄，`sitemap.xml` 因此只有首頁。
-- Dock 導覽（寬螢幕＋滑鼠）：浮在畫面底部中央，取代快速指令按鈕；滑鼠靠近時圖示放大（只用 transform，不會讓版面位移），鍵盤聚焦也會放大，減少動態時不放大；窄螢幕與觸控維持原本的按鈕。終端機與概覽會自動讓出 dock 的高度（`--dock-h`），「已複製」提示也在 dock 上方。
-- 狀態列（終端機視窗底部）顯示版本號與「0 cookies · 0 trackers · 0 dependencies」，每一句都有測試把關（`test/status.test.mjs`）：`package.json` 沒有任何 dependencies、`src/` 只有相對路徑的 import、程式碼不碰 cookie、沒有任何網路請求且 CSP 不允許外部主機。改版本號時要同時改 `package.json`、`src/content.js` 的 `VERSION` 與 `index.html`（測試會提醒）。
-- 不使用外部字型、不做任何分析或追蹤。`localStorage` 的讀寫都包了 try/catch。
+- 嚴格的 CSP（`default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; media-src 'self'`，部署版沒有 `connect-src`，頁面無法對外發出任何請求）：沒有行內腳本、沒有行內樣式、沒有第三方來源，也**沒有外部字型**（全部用系統字型；標題用系統的襯線字）。
+- 使用者輸入（例如 `echo`）一律跳脫；`src/page.js` 產生的所有文字也都跳脫；外部連結帶 `rel="noopener noreferrer"`。
+- **相機鏡子**（`src/fx/mirror.js`）：**按下按鈕才會要求相機**（開啟網址不會啟動相機）；只用視訊、不要麥克風；影像在裝置上轉成文字就丟掉。頁面上的鏡子留在燈箱裡（`stage: false`），終端機的 `mirror` 會開大畫面（原生 `<dialog>`，依相機比例放到最大，字的密度三級、依裝置自動權衡解析度與速度）。Stop／Esc／離開頁面／分頁被隱藏都會立刻關掉相機；重新顯示頁面（換語言）也會。程式碼完全不使用 `MediaRecorder`、`toDataURL`、`toBlob`、`captureStream`、網路請求（`test/mirror.test.mjs` 掃描 `src/` 把關）。快門印出的只是文字，留在頁面上，不會被存起來。
+- 頁尾狀態列顯示「0 cookies · 0 trackers · 0 dependencies」與版本號，每一句都有測試把關（`test/status.test.mjs`）。改版本號時要同時改 `package.json`、`src/content.js` 的 `VERSION`（`index.html` 由 `npm run build` 產生）。
+- 不做任何分析或追蹤。`localStorage` 的讀寫都包了 try/catch。
 
 **效能**
-- 約 119 KB 原始碼（壓縮後約 38 KB），零相依；`modulepreload` 避免模組瀑布。
-- 背景 canvas 在分頁隱藏時暫停、限制 devicePixelRatio、畫格變慢時自動降低密度；`saveData` 時預設關閉特效與轉場。
-- 準星用 `transform`；原生游標換成 SVG 準星，所以游標本身零延遲，只有裝飾層會緩動。
+- 零相依；`modulepreload` 避免模組瀑布。
+- 每張圖只在第一次進入畫面時顯影一次，結束就移除 canvas；顯影用的取樣在很小的 canvas 上做（每個字一個像素）。首屏的手電筒只在滑鼠移動時重畫。ASCII 臉只在它出現在畫面上時才動。
+- 圖片都有寬高，載入時版面不會跳動。
 
 **SEO / 無 JS**
-- `index.html` 內含用 `npm run build` 預渲染的英文內容；沒有 JavaScript 也能完整閱讀，且不會出現失效的按鈕。
+- `index.html` 內含用 `npm run build` 預渲染的英文頁面；沒有 JavaScript 也能完整閱讀。
 - 單一 `<h1>`、meta description、Open Graph、`Person` 的 JSON-LD。
+
+**文案草稿**：這次改版的新文字（`ui[lang].page`：首屏那句話、「最近」兩格、照片與實驗的介紹、實驗卡片上的問題、「關於」的開場句與兩段話、鏡子與聯絡的標題）是依網站原有內容寫的草稿，請改成你自己的話，尤其是「最近」和實驗卡片上的問題。
 
 **內容規則**：只放你自己的公開 repo 與對外定位；不要寫私有專案名稱、客戶、數字或營收。每個主張都應能對應到公開的證據。
 
 **作品（`works`）**：除了 4 個程式專案，另有 6 項作品（視覺與 3D、研究與思考、設計）。每一項都已對照原始資料查證，只用可公開的部分並去識別化（不含私人專案名稱、合作對象、客戶、金額）；每一項都有「不主張」欄位說明沒有宣稱什麼。只有確實有公開頁面的才附連結。新增作品請照 `works` 的欄位格式寫，`test/content.test.mjs` 會擋下私人字眼與術語。
 
-**攝影**：網站上現在有 12 張你自己的照片（Nikon Z 6，2025 年 2 月某一天拍的；圖庫編號 5–16，標題與說明是依照片內容寫的、不含地點與姓名，歡迎自行改寫）。`photos` 指令與概覽的「攝影」區塊在沒有任何照片時不會出現（不會有空的區塊）。要加新照片：
+**攝影**：網站上現在有 12 張你自己的照片（Nikon Z 6，2025 年 2 月某一天拍的；圖庫編號 5–16，標題與說明是依照片內容寫的、不含地點與姓名，歡迎自行改寫）。`photos` 指令與首頁的「照片」區塊在沒有任何照片時不會出現（不會有空的區塊，導覽也不會有連結）；首頁要顯示哪幾張照片由 `src/content.js` 的 `home.photos` 決定。要加新照片：
 
 1. `node scripts/add-photo.mjs ~/路徑/照片.jpg`（可一次多張；需要 macOS 的 `sips` 與 ImageMagick）。它會轉成 sRGB、修正旋轉、輸出 1600px 大圖與 480px 縮圖到 `assets/gallery/`，**移除所有中繼資料**（GPS 位置、機身序號、擁有者姓名、內嵌縮圖），從原檔讀出相機與曝光資訊，並印出要貼進 `src/content.js` `gallery` 的條目（`set: 'photo'`、`shot: {…}`）。
 2. 你自己填雙語的 `title`、`caption`、`alt`（不要寫你不想公開的地點或人物），並在 `assets/gallery/SOURCES.md` 記下檔案。
 3. `npm run check`。
 
-拍攝資訊只會顯示 `camera · lens · focal · aperture · shutter · iso` 這六個欄位（`src/photos.js` 的白名單，其他欄位進不了頁面）。測試會檢查：`assets/` 底下每一張 JPEG 都沒有 Exif／GPS／XMP／IPTC／註解；`add-photo` 對一張刻意塞滿 GPS、序號、姓名的假照片能完整清除並正確讀出相機資訊；有照片時的指令、概覽、檢視器與靜態頁（`test/photos-site.test.mjs`、e2e 的 photography 段落，後者用一份含兩張照片的網站副本在真實瀏覽器中驗證）。
+拍攝資訊只會顯示 `camera · lens · focal · aperture · shutter · iso` 這六個欄位（`src/photos.js` 的白名單，其他欄位進不了頁面）。測試會檢查：`assets/` 底下每一張 JPEG 都沒有 Exif／GPS／XMP／IPTC／註解；`add-photo` 對一張刻意塞滿 GPS、序號、姓名的假照片能完整清除並正確讀出相機資訊；有照片時的指令、首頁、檢視器與靜態頁（`test/photos-site.test.mjs`）。
 
 **圖片**：只放你自己的作品或公開專案的輸出，放在 `assets/gallery/`，並在 `SOURCES.md` 記下來源。新增圖片時在 `src/content.js` 的 `gallery` 填寫實際的 `width`／`height`（測試會核對，避免載入時版面跳動）、雙語標題與說明、以及描述圖片內容的 `alt`；說明文字要老實寫出「這張圖不是什麼」。縮圖與轉檔可用 macOS 內建的 `sips`（例如 `sips -s format jpeg -s formatOptions 82 -Z 1024 in.png --out out.jpg`）。每個檔案 < 200 KB（影片 < 600 KB）、總量 < 1.2 MB 由測試把關。影片要把索引放在檔案最前面（`ffmpeg -i in.mp4 -c copy -movflags +faststart out.mp4`，不重新編碼），否則瀏覽器得先抓檔案尾端才能開始播，測試也會擋下。
 
@@ -130,12 +134,12 @@ test/                 node:test 單元測試
 
 ## 測試
 
-- `test/*.test.mjs`：指令引擎、補全、跳脫、內容完整性（中英同構）、CSP 與 SEO 必備項目、預渲染是否同步、臉的決定性與座標範圍、轉場數學、準星、概覽卡片（含雙向連動的對應規則）、遙測格式化、啟動守門員與樣式規則。
-- `scripts/e2e.mjs`：真實 Chrome（DevTools Protocol）。涵蓋鍵盤操作、主題循環、語言切換、轉場、準星、分屏版面與卡片連動、窄螢幕分頁、對比度、手機版面、無 JS、減少動態、觸控模擬、故意弄壞的網站（驗證啟動說明框），並檢查全程沒有 console 錯誤或 CSP 違規。
+- `test/*.test.mjs`：指令引擎、補全、跳脫、內容完整性（中英同構）、首頁的每個區塊與順序、沒有行內樣式或事件、色溫與曝光數字與字元解碼、CSP 與 SEO 必備項目、預渲染是否同步、鏡子的隱私規則、啟動守門員與樣式規則。
+- `scripts/e2e.mjs`：真實 Chrome（DevTools Protocol）。涵蓋首屏顯影與曝光數字、手電筒、照片進入畫面時溶解、導覽光點、檢視器、終端機抽屜（`~`、開機、指令、補全、歷史、捲動同步、Esc）、色溫與語言按鈕、網址（區塊捲動 vs. 打開終端機）、頁面鏡子與快門（Chrome 的假相機）、終端機鏡子大畫面、減少動態、手機版面，並檢查全程沒有 console 錯誤或 CSP 違規。在 Linux 以 root 執行時 Chrome 需要 `--no-sandbox`，可用一個包裝腳本傳給 `CHROME=`。
 
 ## 尚未完成（需要你提供資料或決定）
 
-- **Lighthouse**（本機 `npx lighthouse@12`，桌面預設，連跑 6 次）：效能 100、無障礙 100、最佳實務 100、SEO 92，CLS 0.01；手機預設（單次）效能 98、CLS 0.05。SEO 少的 8 分是 `robots.txt` 項目：Lighthouse 從頁面內用 `fetch` 抓檔，被我們刻意嚴格的 CSP（沒有 `connect-src`）擋下，`robots.txt` 本身存在且回 200，爬蟲不受影響，所以不為此放寬 CSP。本機開發伺服器沒有壓縮與快取標頭，那幾項（壓縮、`no-store` 造成的 bfcache）要等部署到真正的主機才有意義。這次跑出並修掉的：版面位移（左右分屏在 JS 啟動前先把終端機固定在第 2 欄）、email 按鈕對比不足（瀏覽器預設按鈕底色）、`fx`／語言按鈕的無障礙名稱要包含可見文字。
+- **Lighthouse**（以下是改版前的數字，改版後還沒重跑；本機 `npx lighthouse@12`，桌面預設，連跑 6 次）：效能 100、無障礙 100、最佳實務 100、SEO 92，CLS 0.01；手機預設（單次）效能 98、CLS 0.05。SEO 少的 8 分是 `robots.txt` 項目：Lighthouse 從頁面內用 `fetch` 抓檔，被我們刻意嚴格的 CSP（沒有 `connect-src`）擋下，`robots.txt` 本身存在且回 200，爬蟲不受影響，所以不為此放寬 CSP。本機開發伺服器沒有壓縮與快取標頭，那幾項（壓縮、`no-store` 造成的 bfcache）要等部署到真正的主機才有意義。這次跑出並修掉的：版面位移（左右分屏在 JS 啟動前先把終端機固定在第 2 欄）、email 按鈕對比不足（瀏覽器預設按鈕底色）、`fx`／語言按鈕的無障礙名稱要包含可見文字。
 - **部署**：已上線 https://qwertyboy0325.github.io/personal-site/ （GitHub Pages，從 `main` 分支根目錄發佈；每次 push 到 `main` 會自動重新發佈）。線上版 Lighthouse：效能 97、無障礙 100、最佳實務 100、SEO 92，壓縮與 bfcache 項目已通過。任何靜態主機都可以（GitHub Pages、Cloudflare Pages…）。所有路徑都是相對的，可放在子路徑。部署前先跑 `npm run check`。
 
 ## 授權、網址與分享預覽
@@ -149,3 +153,4 @@ test/                 node:test 單元測試
 
 - `src/fx/` 內的字元雨、網路圖與 ASCII 臉由另一個 agent 撰寫後併入；ASCII 3D、轉場、準星、左右分屏概覽、啟動守門員與 matrix 主題是之後加上的。
 - 人臉維持 ASCII 風格（曾做過一版 SVG 臉，已依需求移除）。
+- 改版（光的主題）拿掉了左右分屏概覽、dock、即時遙測、背景字元雨與網路圖、準星游標、可拖曳的浮動檢視視窗、macOS 視窗外框，以及 `fx`、`cursor`、`hud` 指令；`theme` 從四個配色改成色溫。分享預覽圖 `assets/og.png` 還是舊版的終端機卡片，要換的話改 `scripts/make-og.mjs` 再重新產生。

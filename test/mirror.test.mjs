@@ -5,7 +5,7 @@ import { mirrorColumns, mirrorRows, frameLetters, errorKey, mirrorFps, frameInte
 import { execute, PUBLIC_COMMANDS, complete } from '../src/engine.js';
 import { renderEntry } from '../src/render.js';
 import { ui, LANGS } from '../src/content.js';
-import { guiHtml } from '../src/gui.js';
+import { renderPage } from '../src/page.js';
 
 const ctx = (lang = 'en') => ({ lang, theme: 'dark', history: [] });
 const read = (rel) => readFile(new URL(`../${rel}`, import.meta.url), 'utf8');
@@ -77,15 +77,19 @@ test('the mirror command: listed in help, completes, shows the explanation and t
   assert.ok(!plain.includes('<button') && plain.includes('Nothing is recorded'), 'without JavaScript only the explanation is shown');
 });
 
-test('the overview has a card for it, in both languages', () => {
+test('the home page ends with it: a light box with the mirror\'s own parts, a shutter and prints, in both languages', async () => {
   for (const lang of LANGS) {
-    const html = guiHtml(lang);
-    assert.match(html, /data-cmd="mirror" data-key="mirror"/);
-    assert.ok(html.includes(ui[lang].mirrorCard));
-    assert.ok(typeof ui[lang].gui.sections.play === 'string' && ui[lang].gui.sections.play.length >= 2, `${lang}: the section has a name`);
-    assert.ok(html.includes(`// ${ui[lang].gui.sections.play}`));
-    assert.ok(!html.includes('undefined'), `${lang}: no missing text in the overview`);
+    const html = renderPage(lang);
+    const sec = html.slice(html.indexOf('id="mirror"'), html.indexOf('id="contact"'));
+    assert.ok(sec.length > 0, `${lang}: a mirror section before the contact section`);
+    for (const part of ['data-mirror', 'data-mirror-start', 'data-mirror-stop', 'data-mirror-copy', 'class="mirror-ascii"', 'class="mirror-status"', 'data-shutter', 'data-prints']) assert.ok(sec.includes(part), `${lang}: ${part}`);
+    for (const b of sec.matchAll(/<button[^>]*>/g)) assert.match(b[0], /\shidden>$/, `${lang}: buttons wait for the script (${b[0]})`);
+    assert.ok(sec.includes(ui[lang].page.mirror.privacy), `${lang}: says plainly that nothing leaves the device`);
+    assert.ok(!sec.includes('undefined'), `${lang}: no missing text`);
   }
+  const site = await read('src/site.js');
+  assert.match(site, /createMirror\(fig, \{[^}]*stage: false/, 'on the page it stays in its light box instead of opening the big view');
+  assert.match(site, /stopMirror\(\)/, 'and it is switched off when the page is rendered again');
 });
 
 test('privacy by construction: the code never records, saves, uploads or draws the camera into anything that leaves the page', async () => {

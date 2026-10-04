@@ -1,6 +1,6 @@
 // The whole photography feature, exercised with a COPY of the site that contains two
 // photographs (the real site has none yet): commands, help, completion, overview,
-// shooting details, dock, and the static page.
+// shooting details, the home page, and the static page.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -55,10 +55,13 @@ test('without photos: no photos command, no mention in help, nothing changes', a
     assert.ok(!textOf(execute('help', ctx()).blocks).includes('my photographs'));
     assert.ok(!textOf(execute('gallery', ctx()).blocks).includes('photographs'), 'the gallery list has no empty "photographs" group');
     assert.ok(!JSON.stringify(complete('pho', ctx())).includes('photos'));
-    const { guiHtml } = await site.load('src/gui.js');
-    assert.ok(!guiHtml('en').includes('g-photos'), 'no empty photo section in the overview');
-    const { buildStatic } = await site.load('scripts/prerender.mjs');
-    assert.ok(!buildStatic().includes('photographs'));
+    const { renderPage } = await site.load('src/page.js');
+    for (const lang of ['en', 'zh']) {
+      const html = renderPage(lang);
+      assert.ok(!html.includes('id="photos"'), `${lang}: no empty photo section on the page`);
+      assert.ok(!html.includes('href="#photos"'), `${lang}: and no link to one`);
+      assert.match(html, /<section class="hero"[\s\S]*?<img src="assets\/gallery\/[^"]+"/, `${lang}: the hero still has a picture`);
+    }
   } finally { site.done(); }
 });
 
@@ -121,45 +124,30 @@ test('with photos: `gallery` shows two labelled groups and `view` carries the sh
   } finally { site.done(); }
 });
 
-test('with photos: the overview gets its own PHOTOS section and the renders stay in GALLERY', async () => {
+test('with photos: the page shows them with their exposure, and the static page lists them', async () => {
   const site = await siteWithPhotos();
   try {
-    const { guiHtml, activeKey } = await site.load('src/gui.js');
-    const en = guiHtml('en');
-    const sec = (id) => en.match(new RegExp(`<section class="gsec" aria-labelledby="${id}">([\\s\\S]*?)</section>`))?.[1] ?? '';
-    const gallery = sec('g-gallery');
-    const photos = sec('g-photos');
-    assert.equal((gallery.match(/data-cmd="view \d"/g) ?? []).length, 4);
-    assert.deepEqual([...photos.matchAll(/data-cmd="(view \d)"/g)].map((m) => m[1]), ['view 5', 'view 6']);
-    assert.match(photos, /Photo 1 title/);
-    assert.ok(en.indexOf('g-gallery') < en.indexOf('g-photos') && en.indexOf('g-photos') < en.indexOf('g-skills'));
-    assert.match(en, /<h3 id="g-photos">\/\/ PHOTOS<\/h3>/);
-    assert.match(guiHtml('zh'), /<h3 id="g-photos">\/\/ 攝影<\/h3>/);
-    assert.equal(activeKey('view 6'), 'view 6');
-    assert.equal(activeKey('photos'), null);
-  } finally { site.done(); }
-});
-
-test('with photos: the dock treats photos as part of the gallery, and the static page lists them', async () => {
-  const site = await siteWithPhotos();
-  try {
-    const { dockKey } = await site.load('src/dock.js');
-    for (const c of ['photos', 'photo', 'photography', 'view 5']) assert.equal(dockKey(c), 'gallery', c);
+    const { renderPage } = await site.load('src/page.js');
+    const en = renderPage('en');
+    const sec = en.slice(en.indexOf('id="photos"'), en.indexOf('id="lab"'));
+    assert.deepEqual([...sec.matchAll(/<a class="pic" href="[^"]+" data-open="(\d+)"/g)].map((m) => m[1]), ['5', '6'], 'the photos that exist, in order, opening the viewer at their place in the gallery');
+    assert.match(sec, /Photo 1 title/);
+    assert.match(sec, /<span class="exif" data-exif="50\|1\.8\|1\/250">50mm · f\/1\.8 · 1\/250<\/span>/);
+    assert.ok(!/TESTCO|TEST 50mm/.test(sec), 'the page shows the exposure only; camera and lens stay in the viewer');
+    assert.match(renderPage('zh'), /照片 1 標題/);
+    assert.match(en, /href="#photos" data-sec="photos"/);
     const { buildStatic } = await site.load('scripts/prerender.mjs');
-    const html = buildStatic();
-    assert.ok(html.includes('Photo 1 title') && html.includes('photographs'));
-    assert.ok(html.split('<section class="entry">').length - 1 >= 8, 'a photos entry was added to the static page');
+    assert.ok(buildStatic().includes('Photo 1 title'));
   } finally { site.done(); }
 });
 
 test('the viewers show the shooting details line under the caption', async () => {
-  const win = readFileSync(join(REAL, 'src/windows.js'), 'utf8');
   const box = readFileSync(join(REAL, 'src/lightbox.js'), 'utf8');
-  for (const [name, src] of [['windows', win], ['lightbox', box]]) {
+  for (const [name, src] of [['lightbox', box]]) {
     assert.match(src, /shotLine\(g\)/, `${name} reads the details`);
     assert.match(src, /exif\.textContent = shot/, `${name} inserts them as text (never HTML)`);
     assert.match(src, /className = 'exif'/);
   }
   const css = readFileSync(join(REAL, 'src/styles.css'), 'utf8');
-  assert.match(css, /\.exif \{[^}]*display: block/);
+  assert.match(css, /\.entry \.exif, \.viewer \.exif \{ display: block;/);
 });

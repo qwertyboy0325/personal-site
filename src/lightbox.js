@@ -12,7 +12,6 @@ export function createLightbox({ getLang, reduceMotion = false }) {
   dlg.setAttribute('aria-labelledby', 'viewer-title');
   dlg.innerHTML = `
     <div class="vbar">
-      <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
       <span class="vtitle" id="viewer-title"></span>
       <span class="vcount"></span>
       <button type="button" class="vclose"></button>

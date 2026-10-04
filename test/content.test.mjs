@@ -41,7 +41,7 @@ test('every URL in the content is https', () => {
 });
 
 test('supported themes and languages are what the CSS and engine expect', () => {
-  assert.deepEqual(THEMES, ['dark', 'light', 'amber', 'matrix']);
+  assert.deepEqual(THEMES, ['auto', '5200k', '3400k', '2700k', '2200k', 'matrix']);
   assert.deepEqual(LANGS, ['en', 'zh']);
 });
 
@@ -102,13 +102,13 @@ test('index.html: the no-JS fallback contains the real content', async () => {
   assert.ok(html.includes(profile.github));
 });
 
-test('stylesheet: reduced-motion, focus, and three themes are defined', async () => {
+test('stylesheet: reduced-motion, focus, the warm light and the matrix easter egg are defined', async () => {
   const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
   assert.match(css, /prefers-reduced-motion: reduce/);
   assert.match(css, /:focus-visible/);
-  for (const t of THEMES.filter((x) => x !== 'dark')) assert.match(css, new RegExp(`data-theme="${t}"`));
-  assert.match(css, /prefers-color-scheme: light/);
-  assert.ok(!/@import|url\(http/.test(css), 'no external resources in CSS');
+  assert.match(css, /--sun: #[0-9a-f]{6}/, 'a default warm light before the script sets the colour temperature');
+  assert.match(css, /data-theme="matrix"/);
+  assert.ok(!/@import|url\(|@font-face/.test(css), 'no external resources or web fonts in CSS');
 });
 
 // The site is for people who do not write code: engineering terms may only live

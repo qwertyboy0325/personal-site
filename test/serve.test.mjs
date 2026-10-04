@@ -19,8 +19,8 @@ test('classifyChange: css swaps in place, code reloads, noise is ignored', () =>
 });
 
 test('affectsPrerender: only the files that feed the static fallback', () => {
-  for (const f of ['src/content.js', 'src/engine.js', 'src/render.js', 'src/fx/face.js', 'src/fx/rain.js']) assert.ok(affectsPrerender(f), f);
-  for (const f of ['src/main.js', 'src/styles.css', 'src/hud.js', 'src/fx/wipe.js', 'index.html', '']) assert.ok(!affectsPrerender(f), f);
+  for (const f of ['src/content.js', 'src/page.js', 'src/render.js', 'src/fx/face.js', 'src/fx/rain.js']) assert.ok(affectsPrerender(f), f);
+  for (const f of ['src/main.js', 'src/site.js', 'src/engine.js', 'src/styles.css', 'src/fx/wipe.js', 'index.html', '']) assert.ok(!affectsPrerender(f), f);
 });
 
 const PAGE = `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; base-uri 'none'; form-action 'none'"></head><body><main>hi</main></body></html>`;

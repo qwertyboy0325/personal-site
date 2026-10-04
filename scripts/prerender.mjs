@@ -1,26 +1,19 @@
-// Renders the English output of about/projects/skills/contact into index.html
-// between the prerender markers, so the page is complete without JavaScript
-// and the static copy can never drift from src/content.js.
+// Renders the English home page (src/page.js) into index.html between the
+// prerender markers, so the page is complete without JavaScript and the static
+// copy can never drift from src/content.js.
 //
 //   node scripts/prerender.mjs          write index.html
 //   node scripts/prerender.mjs --check  exit 1 if index.html is out of date
 
 import { readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { execute, welcomeBlocks, HAS_PHOTOS } from '../src/engine.js';
-import { renderEntry } from '../src/render.js';
+import { renderPage } from '../src/page.js';
 
 const START = '<!-- prerender:start -->';
 const END = '<!-- prerender:end -->';
-const ctx = { lang: 'en', theme: 'dark', history: [] };
 
 export function buildStatic() {
-  const opts = { interactive: false };
-  const entries = [renderEntry(welcomeBlocks(ctx), opts)];
-  for (const cmd of ['about', 'projects', 'works', 'gallery', ...(HAS_PHOTOS ? ['photos'] : []), 'skills', 'contact']) {
-    entries.push(renderEntry([{ t: 'echo', v: cmd }, ...execute(cmd, ctx).blocks], opts));
-  }
-  return entries.join('\n');
+  return renderPage('en');
 }
 
 export function inject(html, body) {
