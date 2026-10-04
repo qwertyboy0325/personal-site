@@ -9,8 +9,8 @@
   "scripts": {
     "dev": "node scripts/serve.mjs",
     "build": "node scripts/prerender.mjs",
-    "test": "node --test test/",
+    "test": "node --test test/*.test.mjs",
     "e2e": "node scripts/e2e.mjs",
-    "check":"node scripts/prerender.mjs --check && node --test test/"
+    "check": "node scripts/prerender.mjs --check && node --test test/*.test.mjs"
   }
 }
