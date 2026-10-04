@@ -9,7 +9,7 @@ import { startAscii3d } from './fx/ascii3d.js';
 import { createTransitions } from './fx/wipe.js';
 import { TRANSITION_MODES } from './fx/transition.js';
 import { createLightbox } from './lightbox.js';
-import { createMirror, stopMirror } from './fx/mirror.js';
+import { createMirror, stopMirror, defaultFocal } from './fx/mirror.js';
 import { asciiFromImage, asciiColumns, createAsciiCache } from './fx/imgascii.js';
 
 // The page is the site; the terminal is a second way in. It lives in a drawer (press ~), reads the same content,
@@ -325,7 +325,7 @@ function startNewMirrors() {
   for (const fig of log.querySelectorAll('[data-mirror]:not([data-started])')) {
     fig.dataset.started = '';
     const t = ui[state.lang].mirror;
-    createMirror(fig, { t, reduceMotion, onCopied: (ok) => toast(ok ? t.copied : t.copyFailed) });
+    createMirror(fig, { t, reduceMotion, focal: defaultFocal(finePointer), onCopied: (ok) => toast(ok ? t.copied : t.copyFailed) });
   }
 }
 

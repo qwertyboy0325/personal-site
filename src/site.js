@@ -9,7 +9,7 @@
 
 import { RAMP, easeOut, decodeFrame, developStep, tickExposure, parseExif, rampIndex, kelvinOf, kelvinForHour, sunColor, clock } from './light.js';
 import { startFace } from './fx/face.js';
-import { createMirror, stopMirror } from './fx/mirror.js';
+import { createMirror, stopMirror, defaultFocal } from './fx/mirror.js';
 import { ui } from './content.js';
 
 const MONO = 'ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace';
@@ -348,25 +348,29 @@ export function createSite(root, { lang, reduceMotion, finePointer, quiet = fals
   const fig = root.querySelector('.lightbox-stage[data-mirror]');
   if (fig) {
     const pm = t.page.mirror;
-    createMirror(fig, { t: t.mirror, reduceMotion, getInvert: () => true, stage: false, onCopied: (ok) => toast(ok ? t.mirror.copied : t.mirror.copyFailed) });
+    const mirror = createMirror(fig, { t: t.mirror, reduceMotion, getInvert: () => true, stage: false, focal: defaultFocal(finePointer), onCopied: (ok) => toast(ok ? t.mirror.copied : t.mirror.copyFailed) });
     const live = fig.querySelector('.mirror-ascii');
     const still = fig.querySelector('[data-placeholder]');
     const colsEl = fig.querySelector('[data-cols]');
     const prints = root.querySelector('[data-prints]');
     const flash = fig.querySelector('.flash');
-    const frameText = () => (fig.dataset.state === 'live' && live.textContent ? live.textContent : still.textContent);
+    const isLive = () => fig.dataset.state === 'live' && Boolean(live.textContent);
     const width = (text) => Math.max(...text.split('\n').map((l) => l.length));
-    const showCols = () => { colsEl.textContent = pm.cols(width(frameText())); };
+    const showCols = () => { colsEl.textContent = `${mirror.focal}mm · ${pm.cols(isLive() ? mirror.cols : width(still.textContent))}`; };
     showCols();
-    const mo = new MutationObserver(() => { clearTimeout(mo.t); mo.t = setTimeout(showCols, 250); });
+    // At most four updates a second: the live frames change the text 15 times a second, so a debounce would never fire.
+    const mo = new MutationObserver(() => { mo.t ||= setTimeout(() => { mo.t = 0; showCols(); }, 250); });
     mo.observe(live, { childList: true, characterData: true, subtree: true });
-    mo.observe(fig, { attributes: true, attributeFilter: ['data-state'] });
+    mo.observe(fig, { attributes: true, attributeFilter: ['data-state', 'data-focal'] });
     cleanups.push(() => { mo.disconnect(); clearTimeout(mo.t); stopMirror(); });
     on(fig.querySelector('[data-shutter]'), 'click', () => {
       flash.classList.remove('go');
       void flash.offsetWidth; // restart the animation
       flash.classList.add('go');
-      const text = frameText().replace(/ +$/gm, '');
+      // Like a camera: the viewfinder is a quick preview, the picture itself is finer (one frame can afford it).
+      const trim = (x) => x.replace(/ +$/gm, '');
+      const text = trim(isLive() ? mirror.capture(Math.min(240, Math.round(mirror.cols * 1.5))) ?? live.textContent : still.textContent);
+      const narrow = isLive() ? mirror.capture(80) : null;
       const d = new Date();
       prints.querySelector('.empty')?.remove();
       const card = document.createElement('figure');
@@ -376,18 +380,26 @@ export function createSite(root, { lang, reduceMotion, finePointer, quiet = fals
       const cap = document.createElement('figcaption');
       const meta = document.createElement('span');
       meta.textContent = `${clock(d)}:${String(d.getSeconds()).padStart(2, '0')} · ${pm.cols(width(text))}`;
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.textContent = pm.copy;
-      btn.addEventListener('click', async () => {
-        try { await navigator.clipboard.writeText(text); btn.textContent = pm.copied; } catch {
-          const r = document.createRange(); r.selectNodeContents(pre);
-          const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
-          toast(t.mirror.copyFailed);
-        }
-        setTimeout(() => { btn.textContent = pm.copy; }, 2000);
-      });
-      cap.append(meta, btn);
+      // Two ways to copy: the print as it is, or 80 columns wide, which fits a chat message or a terminal without wrapping.
+      const copyButton = (label, value) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = label;
+        btn.addEventListener('click', async () => {
+          try { await navigator.clipboard.writeText(value); btn.textContent = pm.copied; } catch {
+            const r = document.createRange(); r.selectNodeContents(pre);
+            const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+            toast(t.mirror.copyFailed);
+          }
+          setTimeout(() => { btn.textContent = label; }, 2000);
+        });
+        return btn;
+      };
+      const actions = document.createElement('span');
+      actions.className = 'print-actions';
+      actions.append(copyButton(pm.copy, text));
+      if (narrow) actions.append(copyButton(pm.copyNarrow, trim(narrow)));
+      cap.append(meta, actions);
       card.append(pre, cap);
       prints.prepend(card);
     });

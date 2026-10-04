@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile, readdir } from 'node:fs/promises';
-import { mirrorColumns, mirrorRows, frameLetters, errorKey, mirrorFps, frameInterval, smooth, SAMPLES_PER_CHAR, fitBox, COOLDOWN_MS, SLOW_START_MS, DENSITY, adaptQuality } from '../src/fx/mirror.js';
+import { mirrorColumns, mirrorRows, frameLetters, errorKey, mirrorFps, frameInterval, smooth, SAMPLES_PER_CHAR, fitBox, COOLDOWN_MS, SLOW_START_MS, DENSITY, COLUMN_STEPS, snapColumns, adaptStep, FOCALS, defaultFocal, cropFor } from '../src/fx/mirror.js';
 import { execute, PUBLIC_COMMANDS, complete } from '../src/engine.js';
 import { renderEntry } from '../src/render.js';
 import { ui, LANGS } from '../src/content.js';
@@ -240,39 +240,87 @@ test('starting is safe to interrupt and to repeat: a short cool-down after switc
   for (const lang of LANGS) assert.ok(ui[lang].mirror.slowStart.length > 20, `${lang}.slowStart`);
 });
 
-test('DENSITY: full screen has the room for finer letters than the big view, and the big view is at least as fine as the page box', () => {
+test('DENSITY: full screen is finer than the big view, but never so fine that the letters stop reading as letters', () => {
   assert.ok(DENSITY.full.cell < DENSITY.stage.cell && DENSITY.stage.cell <= DENSITY.inline.cell);
   assert.ok(DENSITY.full.max > DENSITY.stage.max && DENSITY.stage.max > DENSITY.inline.max);
-  // On a 2300 px wide picture (a 1440p screen): the size of one character, and the amount of text per frame.
-  const cols = mirrorColumns(2300, DENSITY.full);
-  assert.equal(cols, 420);
-  assert.ok(2300 / cols >= 5 && 2300 / cols <= 6, 'about 5 to 6 px per character: fine, but clearly letters');
-  assert.ok(cols * mirrorRows(cols, 1280, 720) < 60000, 'bounded amount of text per frame');
-  assert.equal(mirrorColumns(1409, DENSITY.stage), 200, 'the windowed big view');
+  for (const d of Object.values(DENSITY)) assert.ok(d.cell >= 6, 'at least 6 px per character (about a 10 px letter)');
+  for (const d of Object.values(DENSITY)) assert.ok(COLUMN_STEPS.includes(d.max), `${d.max} is one of the steps`);
+  const cols = mirrorColumns(2300, DENSITY.full); // a 1440p screen
+  assert.equal(cols, 240);
+  assert.ok(cols * mirrorRows(cols, 1280, 720) < 20000, 'bounded amount of text per frame');
+  assert.equal(mirrorColumns(1409, DENSITY.stage), 160, 'the windowed big view');
   assert.equal(mirrorColumns(700, DENSITY.inline), 100);
 });
 
-test('adaptQuality: finer when there is room, coarser when frames are costly or late, always between 0.4 and 1', () => {
+test('column steps: the letters change size in a few deliberate steps, never by a few characters at a time', () => {
+  assert.deepEqual([...COLUMN_STEPS].sort((a, b) => a - b), COLUMN_STEPS, 'in order');
+  for (let i = 1; i < COLUMN_STEPS.length; i++) {
+    const ratio = COLUMN_STEPS[i] / COLUMN_STEPS[i - 1];
+    assert.ok(ratio >= 1.2 && ratio <= 1.4, `${COLUMN_STEPS[i - 1]} -> ${COLUMN_STEPS[i]}: a visible step, about half or double the work`);
+  }
+  assert.equal(snapColumns(97), 80);
+  assert.equal(snapColumns(100), 100);
+  assert.equal(snapColumns(5), COLUMN_STEPS[0]);
+  assert.equal(snapColumns(9999), COLUMN_STEPS.at(-1));
+});
+
+test('adaptStep: the detail gives way before the frame rate, drops quickly, climbs slowly, and stays in range', () => {
   const target = 1000 / 15;
-  assert.equal(adaptQuality(1, 3, 70, target), 1, 'cheap frames at full quality: stay');
-  assert.ok(adaptQuality(1, 40, 80, target) < 1, 'a frame that takes 40 ms of 66: lower the detail');
-  assert.ok(adaptQuality(1, 5, 140, target) < 1, 'frames arriving late: lower the detail');
-  assert.ok(adaptQuality(0.5, 4, 70, target) > 0.5, 'room to spare: creep back up');
-  assert.equal(adaptQuality(0.5, 12, 75, target), 0.5, 'in between: leave it');
-  assert.equal(adaptQuality(0.4, 100, 300, target), 0.4, 'never below 0.4');
-  assert.equal(adaptQuality(1, 1, 60, target), 1, 'never above 1');
-  assert.equal(adaptQuality(0.99, 1, 60, target), 1, 'and it stops at 1');
-  for (const bad of [NaN, undefined, null, 'x', -3, 9]) { const v = adaptQuality(bad, 10, 70, target); assert.ok(v >= 0.4 && v <= 1, String(bad)); }
-  assert.equal(adaptQuality(0.8, NaN, NaN, target), 0.8);
-  assert.equal(adaptQuality(0.8, 10, 70, 0), 0.8);
-  // A slow device converges: repeatedly applying it with costs that fall as the detail falls settles below 1.
-  let q = 1;
-  for (let i = 0; i < 40; i++) q = adaptQuality(q, 50 * q * q, 70 + 100 * (1 - q), target);
-  assert.ok(q < 0.85 && q >= 0.4, `settled at ${q.toFixed(2)}`);
-  // A fast device stays at full detail.
-  q = 1;
-  for (let i = 0; i < 40; i++) q = adaptQuality(q, 4 * q, 70, target);
-  assert.equal(q, 1);
+  const top = COLUMN_STEPS.length - 1;
+  let s = { idx: top, over: 0, under: 0 };
+  // A frame that takes 14 ms of 66 is still fine for the frame rate (that slows past ~17 ms), but already too much detail.
+  s = adaptStep(s, 14, 66, target);
+  assert.equal(s.idx, top, 'one costly check is not enough');
+  s = adaptStep(s, 14, 66, target);
+  assert.equal(s.idx, top - 1, 'two in a row: one step down');
+  assert.equal(adaptStep({ idx: 4, over: 1, under: 0 }, 4, 140, target).idx, 3, 'frames arriving late count as costly');
+  // Climbing: only if the next step, about (next/current)^2 as costly, would still fit, five checks in a row.
+  let c = { idx: 4, over: 0, under: 0 };
+  for (let i = 0; i < 4; i++) c = adaptStep(c, 3, 66, target);
+  assert.equal(c.idx, 4, 'not yet');
+  c = adaptStep(c, 3, 66, target);
+  assert.equal(c.idx, 5, 'after five calm checks, one step up');
+  assert.equal(adaptStep({ idx: 4, over: 0, under: 4 }, 7, 66, target).idx, 4, 'the next step would cost ~11 ms: stay');
+  assert.equal(adaptStep({ idx: 4, over: 0, under: 4 }, 7, 66, target).under, 0, 'and start counting again');
+  assert.equal(adaptStep({ idx: 0, over: 5, under: 0 }, 100, 300, target).idx, 0, 'never below the first step');
+  assert.equal(adaptStep({ idx: top, over: 0, under: 9 }, 1, 60, target).idx, top, 'never above the last');
+  for (const bad of [null, undefined, {}, { idx: 'x' }, { idx: -4 }, { idx: 99 }]) {
+    const v = adaptStep(bad, 10, 70, target).idx;
+    assert.ok(Number.isInteger(v) && v >= 0 && v <= top, JSON.stringify(bad));
+  }
+  assert.deepEqual(adaptStep({ idx: 3, over: 1, under: 2 }, NaN, NaN, target), { idx: 3, over: 1, under: 2 }, 'no measurement: no change');
+  // A slow device settles where a frame fits the budget; a fast one stays at the top.
+  let slow = { idx: top };
+  for (let i = 0; i < 60; i++) slow = adaptStep(slow, 25 * (COLUMN_STEPS[slow.idx] / 240) ** 2, 70, target);
+  assert.ok(slow.idx < top && 25 * (COLUMN_STEPS[slow.idx] / 240) ** 2 <= target * 0.2, `settled at ${COLUMN_STEPS[slow.idx]} columns`);
+  let fast = { idx: top };
+  for (let i = 0; i < 60; i++) fast = adaptStep(fast, 4 * (COLUMN_STEPS[fast.idx] / 240) ** 2, 66, target);
+  assert.equal(fast.idx, top);
+});
+
+test('lenses: a longer lens crops the middle of the same picture, a little above centre where faces are', () => {
+  assert.deepEqual(FOCALS.map((f) => f.mm), [28, 50, 85]);
+  assert.equal(FOCALS[0].zoom, 1, 'the widest lens is the whole picture');
+  assert.equal(defaultFocal(true), 50, 'a desk camera sees the room: start closer');
+  assert.equal(defaultFocal(false), 28, 'a phone camera is already close');
+  assert.deepEqual(cropFor(1280, 720, 1), { sx: 0, sy: 0, sw: 1280, sh: 720 });
+  const c = cropFor(1280, 720, 2);
+  assert.deepEqual([c.sw, c.sh], [640, 360], 'same shape, half the size');
+  assert.equal(c.sx, 320, 'centred left to right');
+  assert.ok(c.sy < (720 - 360) / 2 && c.sy > 0, 'lifted towards the top');
+  assert.ok(c.sy + c.sh <= 720 && c.sx + c.sw <= 1280, 'inside the picture');
+  assert.deepEqual(cropFor(1280, 720, 0.3), cropFor(1280, 720, 1), 'never zooms out past the picture');
+  assert.deepEqual(cropFor(NaN, -1, 2), { sx: 0, sy: 0, sw: 0, sh: 0 });
+});
+
+test('the shutter prints finer than the live view, and offers an 80-column copy that fits a chat message', async () => {
+  const src = await read('src/fx/mirror.js');
+  assert.match(src, /function capture\(cols\)/);
+  assert.match(src, /if \(!live \|\| !video\.videoWidth\) return null;/, 'nothing to capture while the camera is off');
+  const site = await read('src/site.js');
+  assert.match(site, /mirror\.capture\(Math\.min\(240, Math\.round\(mirror\.cols \* 1\.5\)\)\)/);
+  assert.match(site, /mirror\.capture\(80\)/);
+  for (const lang of LANGS) assert.ok(ui[lang].page.mirror.copyNarrow.includes('80') && ui[lang].mirror.focal.length > 2, lang);
 });
 
 test('the mirror follows the browser into real full screen and works out the density again', async () => {
@@ -281,6 +329,6 @@ test('the mirror follows the browser into real full screen and works out the den
   assert.match(src, /document\.addEventListener\('webkitfullscreenchange', onFullscreenChange\)/, 'Safari');
   assert.match(src, /full = Boolean\(stage && el === stage\.dlg\)/);
   assert.match(src, /const tier = stage \? \(full \? DENSITY\.full : DENSITY\.stage\) : DENSITY\.inline;/);
-  assert.match(src, /quality = adaptQuality\(quality, avgCost, avgGap, 1000 \/ mirrorFps\(reduceMotion\)\)/);
+  assert.match(src, /const next = adaptStep\(\{ \.\.\.step, idx: eff \}, avgCost, avgGap, budget\)/);
   assert.match(src, /removeEventListener\('fullscreenchange', onFullscreenChange\)/, 'and lets go of it again');
 });

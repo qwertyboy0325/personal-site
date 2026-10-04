@@ -9,31 +9,82 @@
 
 import { imageToAscii } from './imgascii.js';
 
-/** Characters per row for a mirror `widthPx` wide: about one per 7 px, 36 to 100 (more room in the big view: up to 140). */
+/** Characters per row for a mirror `widthPx` wide: about one per 7 px, 36 to 100 (more room in the big view). */
 export function mirrorColumns(widthPx, { cell = 7, min = 36, max = 100 } = {}) {
   const w = Number(widthPx);
   if (!Number.isFinite(w) || w <= 0) return min;
   return Math.min(max, Math.max(min, Math.round(w / cell)));
 }
 
-/** How dense the letters are: pixels per character and the most characters per row. Real full screen has the room for more. */
+/**
+ * How dense the letters are: pixels per character and the most characters per row. Real full screen has the room for more,
+ * but never below 6 px a character: finer than that the letters stop reading as letters and the mirror becomes a halftone photo.
+ */
 export const DENSITY = {
   inline: { cell: 7, max: 100 },
-  stage: { cell: 7, max: 200 },
-  full: { cell: 5, max: 420 },
+  stage: { cell: 7, max: 160 },
+  full: { cell: 6, max: 240 },
 };
 
 /**
- * Trade resolution against speed. `q` (0.4 to 1) scales the number of characters; it drops when frames are costly or late
- * and creeps back up when there is room to spare. avgCost = time spent on a frame, avgGap = time between frames, both in ms.
+ * The widths the mirror may use, in steps: the letters change size rarely and on purpose instead of breathing with every
+ * measurement. A step down is a quarter to a third fewer characters, so about half the work per frame.
  */
-export function adaptQuality(q, avgCost, avgGap, targetMs) {
-  const cur = Number.isFinite(q) ? Math.min(1, Math.max(0.4, q)) : 1;
+export const COLUMN_STEPS = [36, 48, 64, 80, 100, 128, 160, 200, 240];
+
+/** The largest step that is not wider than `cols` (the first step at least). */
+export function snapColumns(cols) {
+  let out = COLUMN_STEPS[0];
+  for (const s of COLUMN_STEPS) if (s <= cols) out = s;
+  return out;
+}
+
+/**
+ * Resolution gives way before the frame rate does: a mirror that lags behind your movements feels broken long before one
+ * with coarser letters does. `state` = { idx, over, under }: idx is the highest step allowed (an index into COLUMN_STEPS),
+ * over / under count checks in a row that were too costly / had room to spare.
+ * - Down one step after `patience` costly checks: a frame taking more than `drop` of its budget (well before the frame rate
+ *   would have to slow, see frameInterval) or frames arriving late.
+ * - Up one step only after `calm` checks in a row where the next step, which costs about (next / current)^2 as much, would
+ *   still fit within `rise` of the budget.
+ * avgCost = time spent on a frame, avgGap = time between frames, targetMs = the frame budget, all in ms.
+ */
+export function adaptStep(state, avgCost, avgGap, targetMs, { drop = 0.2, rise = 0.12, patience = 2, calm = 5 } = {}) {
+  const last = COLUMN_STEPS.length - 1;
+  const idx = Number.isInteger(state?.idx) ? Math.min(last, Math.max(0, state.idx)) : last;
+  const cur = { idx, over: state?.over | 0, under: state?.under | 0 };
   if (!(avgCost > 0) || !(targetMs > 0)) return cur;
   const late = Number.isFinite(avgGap) && avgGap > targetMs * 1.5;
-  if (avgCost > targetMs * 0.35 || late) return Math.max(0.4, cur * 0.85);
-  if (avgCost < targetMs * 0.15 && !(avgGap > targetMs * 1.2)) return Math.min(1, cur * 1.05);
-  return cur;
+  if (avgCost > targetMs * drop || late) {
+    const over = cur.over + 1;
+    return over >= patience && idx > 0 ? { idx: idx - 1, over: 0, under: 0 } : { idx, over, under: 0 };
+  }
+  if (idx === last) return { idx, over: 0, under: 0 };
+  const grow = (COLUMN_STEPS[idx + 1] / COLUMN_STEPS[idx]) ** 2;
+  if (avgCost * grow < targetMs * rise && !(avgGap > targetMs * 1.2)) {
+    const under = cur.under + 1;
+    return under >= calm ? { idx: idx + 1, over: 0, under: 0 } : { idx, over: 0, under };
+  }
+  return { idx, over: 0, under: 0 };
+}
+
+/** Lenses: a longer one crops the middle of the camera's picture, so a face gets more of the letters at the same cost. */
+export const FOCALS = [{ mm: 28, zoom: 1 }, { mm: 50, zoom: 1.5 }, { mm: 85, zoom: 2.2 }];
+
+/** The default lens: a laptop or desk camera sees a lot of room, so 50mm; a phone's front camera is already close, so 28mm. */
+export const defaultFocal = (finePointer) => (finePointer ? 50 : 28);
+
+/**
+ * The part of a `videoW` x `videoH` picture a lens of `zoom` sees: the same shape, `zoom` times smaller, centred left to right
+ * and lifted a little (`lift` 0.5 is the middle), because faces sit above the middle of a webcam picture.
+ */
+export function cropFor(videoW, videoH, zoom, { lift = 0.42 } = {}) {
+  const w = Number(videoW) > 0 ? Number(videoW) : 0;
+  const h = Number(videoH) > 0 ? Number(videoH) : 0;
+  const z = Number.isFinite(zoom) && zoom >= 1 ? zoom : 1;
+  const sw = w / z;
+  const sh = h / z;
+  return { sx: (w - sw) / 2, sy: (h - sh) * Math.min(1, Math.max(0, lift)), sw, sh };
 }
 
 /**
@@ -126,8 +177,11 @@ export function stopMirror() {
  * Wire up a mirror figure (see renderMirror in render.js). `getInvert()` says whether the light theme is on;
  * `t` holds the wording (status, errors, toast text); `onCopied(ok)` is told how copying went.
  * `stage: false` keeps the picture in the page's own box (the home page's light-box) instead of the big view.
+ * `focal` (mm, one of FOCALS) is the lens it starts with; buttons with data-focal inside `fig` switch it.
+ * Returns { stop, live, focal, cols, capture(cols) }: capture() turns the current camera frame into text at any width (the
+ * shutter uses it to print a frame finer than the live view can afford), or returns null while the camera is off.
  */
-export function createMirror(fig, { t, getInvert = () => false, reduceMotion = false, onCopied = () => {}, stage: useStage = true }) {
+export function createMirror(fig, { t, getInvert = () => false, reduceMotion = false, onCopied = () => {}, stage: useStage = true, focal: startFocal = 50 }) {
   const inlinePre = fig.querySelector('.mirror-ascii');
   const start = fig.querySelector('[data-mirror-start]');
   const stopBtn = fig.querySelector('[data-mirror-stop]');
@@ -155,7 +209,18 @@ export function createMirror(fig, { t, getInvert = () => false, reduceMotion = f
   let shown = '';        // the text on screen: an unchanged frame is not written again
   let metrics = '';      // the cols/rows/size the font was last set for
   let observer = null;
-  let quality = 1;       // 0.4 to 1: how much of the available resolution is used (see adaptQuality)
+  let step = { idx: COLUMN_STEPS.length - 1, over: 0, under: 0 }; // the widest the letters may be right now (see adaptStep)
+  let shownCols = 0;     // the width of the frame on screen
+  let zoom = (FOCALS.find((f) => f.mm === startFocal) ?? FOCALS[1]).zoom;
+  const lensOf = (z) => FOCALS.find((f) => f.zoom === z)?.mm ?? 28;
+  const focalButtons = () => [...fig.querySelectorAll('[data-focal]'), ...(stage ? stage.dlg.querySelectorAll('[data-focal]') : [])];
+  function setFocal(mm) {
+    const lens = FOCALS.find((f) => f.mm === Number(mm));
+    if (!lens) return;
+    zoom = lens.zoom;
+    for (const b of focalButtons()) b.setAttribute('aria-pressed', String(Number(b.dataset.focal) === lens.mm));
+    fig.dataset.focal = String(lens.mm);
+  }
   let lastProcessed = 0;
   let avgGap = 0;
   let sinceAdapt = 0;
@@ -164,6 +229,8 @@ export function createMirror(fig, { t, getInvert = () => false, reduceMotion = f
   let slowTimer = 0;
   let stage = null;      // the big view (a <dialog>) while the camera is on
   let out = inlinePre;   // where the letters are drawn: the big view, or the page's own box if the browser has no <dialog>
+  for (const btn of fig.querySelectorAll('[data-focal]')) { btn.hidden = false; btn.addEventListener('click', () => setFocal(btn.dataset.focal)); }
+  setFocal(lensOf(zoom));
 
   const setState = (state, message) => {
     fig.dataset.state = state;
@@ -184,6 +251,7 @@ export function createMirror(fig, { t, getInvert = () => false, reduceMotion = f
       <div class="ms-bar">
         <span class="ms-title" id="mirror-stage-title"></span>
         <span class="ms-status" role="status" aria-live="polite"></span>
+        <span class="ms-focal" role="group">${FOCALS.map((f) => `<button type="button" class="ms-btn" data-focal="${f.mm}" aria-pressed="false">${f.mm}mm</button>`).join('')}</span>
         <button type="button" class="ms-btn ms-copy"></button>
         <button type="button" class="ms-btn ms-full" hidden></button>
         <button type="button" class="ms-btn ms-close">✕</button>
@@ -193,6 +261,9 @@ export function createMirror(fig, { t, getInvert = () => false, reduceMotion = f
     const q = (sel) => dlg.querySelector(sel);
     stage = { dlg, view: q('.ms-view'), pre: q('.ms-ascii'), status: q('.ms-status'), full: q('.ms-full') };
     q('.ms-title').textContent = t.label;
+    if (t.focal) q('.ms-focal').setAttribute('aria-label', t.focal);
+    for (const b of dlg.querySelectorAll('[data-focal]')) b.addEventListener('click', () => setFocal(b.dataset.focal));
+    setFocal(lensOf(zoom));
     q('.ms-copy').textContent = t.copyShort;
     q('.ms-copy').addEventListener('click', copy);
     q('.ms-close').setAttribute('aria-label', t.closeStage);
@@ -276,31 +347,57 @@ export function createMirror(fig, { t, getInvert = () => false, reduceMotion = f
     if (document.hidden && live) stop(t.pausedHidden); // never keep the camera on in a hidden tab
   }
 
+  /** Draw what the lens sees, flipped like a mirror (your left is on the left), into a w x h canvas. */
+  function drawLens(ctx, w, h) {
+    const c = cropFor(video.videoWidth, video.videoHeight, zoom);
+    ctx.save();
+    ctx.scale(-1, 1);
+    ctx.drawImage(video, c.sx, c.sy, c.sw, c.sh, -w, 0, w, h);
+    ctx.restore();
+  }
+
+  /** The current frame as text `cols` wide, worked out once (the shutter can afford more detail than the live view). */
+  function capture(cols) {
+    if (!live || !video.videoWidth) return null;
+    const c = Math.max(COLUMN_STEPS[0], Math.round(Number(cols) || 0));
+    const rows = mirrorRows(c, video.videoWidth, video.videoHeight);
+    const w = c * SAMPLES_PER_CHAR;
+    const h = rows * SAMPLES_PER_CHAR;
+    const cv = document.createElement('canvas');
+    cv.width = w;
+    cv.height = h;
+    const cx = cv.getContext('2d', { willReadFrequently: true });
+    drawLens(cx, w, h);
+    return frameLetters({ data: cx.getImageData(0, 0, w, h).data, width: w, height: h }, { cols: c, invert: getInvert() });
+  }
+
   function frame(now) {
     if (!live) return;
     if (!fig.isConnected) { release(); return; } // the page moved on: let go of the camera
     raf = requestAnimationFrame(frame);
-    if (now - last < frameInterval(avgCost, mirrorFps(reduceMotion))) return;
+    const budget = 1000 / mirrorFps(reduceMotion);
+    // The frame rate only slows once the letters cannot get any coarser (or a frame is very expensive): see adaptStep.
+    const wait = step.idx > 0 && avgCost < budget * 0.6 ? budget : frameInterval(avgCost, mirrorFps(reduceMotion));
+    if (now - last < wait) return;
     last = now;
     if (!video.videoWidth) return;
     const t0 = performance.now();
     const ratio = video.videoHeight / video.videoWidth;
     const box = fitBox(viewW, viewH, ratio); // as large as the view allows, in the camera's own shape
     const tier = stage ? (full ? DENSITY.full : DENSITY.stage) : DENSITY.inline;
-    const cols = Math.max(36, Math.round(mirrorColumns(box.w, tier) * quality));
+    const roomIdx = COLUMN_STEPS.indexOf(snapColumns(mirrorColumns(box.w, tier)));
+    const eff = Math.min(step.idx, roomIdx); // what the space allows, capped by what the device can afford
+    const cols = COLUMN_STEPS[eff];
     const rows = mirrorRows(cols, video.videoWidth, video.videoHeight);
     const w = cols * SAMPLES_PER_CHAR;
     const h = rows * SAMPLES_PER_CHAR;
     if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
-    g.save();
-    g.scale(-1, 1); // like a mirror: your left is on the left
-    g.drawImage(video, -w, 0, w, h);
-    g.restore();
+    drawLens(g, w, h);
     const { data } = g.getImageData(0, 0, w, h);
     const t1 = performance.now();
     const text = frameLetters({ data, width: w, height: h }, { cols, invert: getInvert() });
     const t2 = performance.now();
-    if (text !== shown) { out.textContent = text; shown = text; }
+    if (text !== shown) { out.textContent = text; shown = text; shownCols = cols; }
     // The same sizing rule as the pictures: `cols` characters span the box exactly, so the letters cover the picture and nothing more.
     // Only worked out again when something changed.
     const key = `${cols}x${rows}@${box.w}x${box.h}`;
@@ -322,10 +419,12 @@ export function createMirror(fig, { t, getInvert = () => false, reduceMotion = f
     lastProcessed = now;
     if (++sinceAdapt >= 10) { // every so often: is the picture too detailed for this device, or could it be finer?
       sinceAdapt = 0;
-      quality = adaptQuality(quality, avgCost, avgGap, 1000 / mirrorFps(reduceMotion));
+      const next = adaptStep({ ...step, idx: eff }, avgCost, avgGap, budget);
+      // A drop always counts; a climb only matters when the device, not the space, was the limit.
+      step = { ...next, idx: next.idx < eff || eff === step.idx ? next.idx : step.idx };
     }
     perf.read += t1 - t0; perf.text += t2 - t1; perf.dom += t3 - t2; perf.n++;
-    if (perf.n === 30) { fig.dataset.perf = JSON.stringify({ read: +(perf.read / 30).toFixed(2), text: +(perf.text / 30).toFixed(2), dom: +(perf.dom / 30).toFixed(2), interval: Math.round(frameInterval(avgCost, mirrorFps(reduceMotion))), cols, rows, q: +quality.toFixed(2), gap: Math.round(avgGap), full }); perf.read = perf.text = perf.dom = perf.n = 0; }
+    if (perf.n === 30) { fig.dataset.perf = JSON.stringify({ read: +(perf.read / 30).toFixed(2), text: +(perf.text / 30).toFixed(2), dom: +(perf.dom / 30).toFixed(2), interval: Math.round(frameInterval(avgCost, mirrorFps(reduceMotion))), cols, rows, step: step.idx, focal: lensOf(zoom), gap: Math.round(avgGap), full }); perf.read = perf.text = perf.dom = perf.n = 0; }
   }
 
   async function begin() {
@@ -359,7 +458,7 @@ export function createMirror(fig, { t, getInvert = () => false, reduceMotion = f
       avgGap = 0;
       lastProcessed = 0;
       sinceAdapt = 0;
-      quality = 1;
+      step = { idx: COLUMN_STEPS.length - 1, over: 0, under: 0 };
       full = false;
       if (useStage) openStage(); // the big view (falls back to the page's own box if the browser cannot show a <dialog>)
       out.dataset.cw = '';
@@ -395,6 +494,6 @@ export function createMirror(fig, { t, getInvert = () => false, reduceMotion = f
   fig.addEventListener('keydown', (e) => { if (e.key === 'Escape' && live) { e.stopPropagation(); stop(); start.focus({ preventScroll: true }); } });
   setState('ready', '');
 
-  const api = { stop, get live() { return live; } };
+  const api = { stop, capture, get live() { return live; }, get focal() { return lensOf(zoom); }, get cols() { return shownCols; } };
   return api;
 }

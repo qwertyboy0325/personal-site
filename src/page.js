@@ -9,6 +9,7 @@
 import { esc, isEmail } from './render.js';
 import { profile, projects, works, gallery, home, banner, ui, VERSION } from './content.js';
 import { renderFace } from './fx/face.js';
+import { FOCALS } from './fx/mirror.js';
 
 const T = (lang) => ui[lang] ?? ui.en;
 const bySlug = (slug) => gallery.find((g) => g.slug === slug);
@@ -151,6 +152,7 @@ function mirror(lang) {
     + '<div class="br" aria-hidden="true"><i></i><i></i><i></i><i></i></div><div class="flash" aria-hidden="true"></div>'
     + `<div class="mread"><span><span class="rec" aria-hidden="true">●</span> <span data-cols></span></span><span>${esc(pm.privacy)}</span></div></div>`
     + `<div class="mctl"><button type="button" class="shutter" data-shutter aria-label="${esc(pm.shutter)}" title="${esc(pm.shutter)}" hidden><span></span></button>`
+    + `<div class="focal" role="group" aria-label="${esc(m.focal)}">${FOCALS.map((f) => `<button type="button" class="tool" data-focal="${f.mm}" aria-pressed="false" hidden>${f.mm}mm</button>`).join('')}</div>`
     + `<div class="mirror-actions"><button type="button" class="pill" data-mirror-start hidden>${esc(m.start)}</button><button type="button" class="pill" data-mirror-stop hidden>${esc(m.stop)}</button><button type="button" class="pill" data-mirror-copy hidden>${esc(m.copyShort)}</button></div></div>`
     + `<p class="mirror-intro">${esc(m.intro)}</p><p class="mirror-status" role="status" aria-live="polite"></p>`
     + '</figure></div>'
